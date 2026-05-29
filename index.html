@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reseller Brand Intelligence</title>
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="search-panel" aria-labelledby="app-title">
+        <div class="brand-mark" aria-hidden="true">
+          <span>RI</span>
+        </div>
+        <div>
+          <p class="eyebrow">Reseller intelligence</p>
+          <h1 id="app-title">Research Brands In Seconds</h1>
+          <ol class="instruction-flow" aria-label="App instructions">
+            <li><span>1</span>Enter a clothing brand</li>
+            <li><span>2</span>Generate a reseller sheet</li>
+            <li><span>3</span>Download the PDF</li>
+          </ol>
+          <p class="intro">
+            Enter a clothing brand to generate a one-page view of resale pricing, sell-through,
+            strongest categories, and top sold comps.
+          </p>
+        </div>
+
+        <form class="brand-form" id="brand-form">
+          <label for="brand-input">Brand name</label>
+          <div class="input-row">
+            <input
+              id="brand-input"
+              name="brand"
+              type="text"
+              autocomplete="off"
+              placeholder="Try Patagonia, Levi's, or Free People"
+              value="Patagonia"
+            />
+            <button type="submit" id="generate-button">Generate sheet</button>
+          </div>
+        </form>
+
+        <ol class="flow-list" aria-label="Data flow">
+          <li><span>1</span>Brand submitted</li>
+          <li><span>2</span>eBay ASP data requested</li>
+          <li><span>3</span>AI insight layer created</li>
+          <li><span>4</span>PDF cheat sheet delivered</li>
+        </ol>
+      </section>
+
+      <section class="sheet-panel" aria-live="polite">
+        <div id="loading-state" class="loading-state" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <p>Building reseller intelligence sheet...</p>
+        </div>
+
+        <div class="sheet-actions">
+          <div>
+            <p id="pdf-status">Generate a sheet to enable PDF export.</p>
+          </div>
+          <button type="button" id="download-pdf-button" disabled>Download PDF</button>
+        </div>
+
+        <article id="report" class="report"></article>
+      </section>
+    </main>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>

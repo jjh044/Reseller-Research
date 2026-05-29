@@ -12,9 +12,9 @@ const ROOT = __dirname;
 const categoryProfiles = {
   default: [
     { name: "Jeans", query: "jeans", keywords: ["jeans", "denim"] },
-    { name: "Shirts", query: "shirt", keywords: ["shirt", "tee", "t-shirt", "flannel", "button"] },
     { name: "Jackets", query: "jacket", keywords: ["jacket", "coat", "vest", "shell"] },
-    { name: "Dresses", query: "dress", keywords: ["dress"] },
+    { name: "Shirts", query: "shirt", keywords: ["shirt", "tee", "t-shirt", "flannel", "button"] },
+    { name: "Pants", query: "pants", keywords: ["pants", "trousers", "joggers", "leggings"] },
   ],
   levis: [
     { name: "Jeans", query: "jeans", keywords: ["jeans", "denim", "501", "505", "550", "wedgie"] },
@@ -40,6 +40,8 @@ const excludedKeywords = "damaged fake replica lot read stains broken parts only
 const boloLookbackDays = 90;
 const minimumResalePrice = 5;
 const maximumResalePrice = 500;
+const cacheTtlMilliseconds = 1000 * 60 * 60 * 6;
+const ebayResponseCache = new Map();
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -98,6 +100,12 @@ async function handleEbayAverageSellingPrice(url, res) {
     return;
   }
 
+  const cachedResponse = getCachedEbayResponse(brand);
+  if (cachedResponse) {
+    sendJson(res, 200, cachedResponse);
+    return;
+  }
+
   const categories = getCategoriesForBrand(brand);
   const apiResults = [];
 
@@ -106,12 +114,31 @@ async function handleEbayAverageSellingPrice(url, res) {
     apiResults.push(mapCategoryResponse(category, data));
   }
 
-  sendJson(res, 200, {
+  const categoriesWithData = apiResults.filter((category) => category.soldListings > 0);
+
+  const responseBody = {
     brand,
     generatedAt: new Date().toISOString(),
     source: "eBay Average Selling Price API",
-    categories: apiResults,
+    categories: categoriesWithData.length > 0 ? categoriesWithData : apiResults,
+  };
+
+  ebayResponseCache.set(normalizeBrand(brand), {
+    expiresAt: Date.now() + cacheTtlMilliseconds,
+    responseBody,
   });
+  sendJson(res, 200, responseBody);
+}
+
+function getCachedEbayResponse(brand) {
+  const cacheKey = normalizeBrand(brand);
+  const cached = ebayResponseCache.get(cacheKey);
+  if (!cached || cached.expiresAt <= Date.now()) {
+    ebayResponseCache.delete(cacheKey);
+    return null;
+  }
+
+  return cached.responseBody;
 }
 
 function getCategoriesForBrand(brand) {
@@ -119,7 +146,11 @@ function getCategoriesForBrand(brand) {
 }
 
 function normalizeBrand(brand) {
-  const normalized = String(brand).trim().toLowerCase().replace(/['’]/g, "");
+  const normalized = String(brand)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, "")
+    .replace(/\s+/g, " ");
   if (normalized === "levi" || normalized === "levis" || normalized === "levi s") return "levis";
   return normalized;
 }
@@ -133,7 +164,7 @@ function generateOpenAiInsights(marketplaceData) {
       recommendation: { type: "string" },
       strongestCategoryNames: {
         type: "array",
-        minItems: 2,
+        minItems: 1,
         maxItems: 2,
         items: { type: "string" },
       },
@@ -153,7 +184,7 @@ function generateOpenAiInsights(marketplaceData) {
         role: "user",
         content: JSON.stringify({
           task:
-            "Create a reseller intelligence readout. Choose the two strongest categories from the supplied category names only. Mention ASP, velocity, and BOLO logic where relevant.",
+            "Create a reseller intelligence readout. Choose the one or two strongest categories from the supplied category names only. Mention ASP, velocity, and BOLO logic where relevant.",
           marketplaceData,
         }),
       },

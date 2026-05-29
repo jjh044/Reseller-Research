@@ -34,7 +34,7 @@ function generateOpenAiInsights(marketplaceData) {
       recommendation: { type: "string" },
       strongestCategoryNames: {
         type: "array",
-        minItems: 2,
+        minItems: 1,
         maxItems: 2,
         items: { type: "string" },
       },
@@ -57,7 +57,7 @@ function generateOpenAiInsights(marketplaceData) {
           role: "user",
           content: JSON.stringify({
             task:
-              "Create a reseller intelligence readout. Choose the two strongest categories from the supplied category names only. Mention ASP, velocity, and BOLO logic where relevant.",
+              "Create a reseller intelligence readout. Choose the one or two strongest categories from the supplied category names only. Mention ASP, velocity, and BOLO logic where relevant.",
             marketplaceData,
           }),
         },

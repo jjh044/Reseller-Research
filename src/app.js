@@ -184,9 +184,10 @@ async function generateMockAiInsights(marketplaceData) {
   const strongest = scoredCategories.slice(0, 2);
   const fastest = [...marketplaceData.categories].sort((a, b) => b.sellThroughRate - a.sellThroughRate)[0];
   const premium = [...marketplaceData.categories].sort((a, b) => b.averageSalePrice - a.averageSalePrice)[0];
+  const strongestNames = strongest.map((category) => category.name).join(strongest.length > 1 ? " and " : "");
 
   return {
-    headline: `${marketplaceData.brand} looks strongest in ${strongest.map((category) => category.name).join(" and ")}.`,
+    headline: `${marketplaceData.brand} looks strongest in ${strongestNames}.`,
     recommendation: `Prioritize ${strongest[0].name.toLowerCase()} when buy cost leaves room for a 3x-4x multiple. ${fastest.name} has the cleanest velocity signal, while ${premium.name} creates the highest average gross sale opportunity.`,
     strongestCategories: strongest,
   };

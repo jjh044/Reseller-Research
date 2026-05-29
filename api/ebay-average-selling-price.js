@@ -3,9 +3,9 @@ const https = require("https");
 const categoryProfiles = {
   default: [
     { name: "Jeans", query: "jeans", keywords: ["jeans", "denim"] },
-    { name: "Shirts", query: "shirt", keywords: ["shirt", "tee", "t-shirt", "flannel", "button"] },
     { name: "Jackets", query: "jacket", keywords: ["jacket", "coat", "vest", "shell"] },
-    { name: "Dresses", query: "dress", keywords: ["dress"] },
+    { name: "Shirts", query: "shirt", keywords: ["shirt", "tee", "t-shirt", "flannel", "button"] },
+    { name: "Pants", query: "pants", keywords: ["pants", "trousers", "joggers", "leggings"] },
   ],
   levis: [
     { name: "Jeans", query: "jeans", keywords: ["jeans", "denim", "501", "505", "550", "wedgie"] },
@@ -31,6 +31,8 @@ const excludedKeywords = "damaged fake replica lot read stains broken parts only
 const lookbackDays = 90;
 const minimumResalePrice = 5;
 const maximumResalePrice = 500;
+const cacheTtlMilliseconds = 1000 * 60 * 60 * 6;
+const responseCache = new Map();
 
 module.exports = async function handler(req, res) {
   try {
@@ -45,6 +47,12 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    const cachedResponse = getCachedResponse(brand);
+    if (cachedResponse) {
+      res.status(200).json(cachedResponse);
+      return;
+    }
+
     const categories = getCategoriesForBrand(brand);
     const apiResults = [];
 
@@ -53,23 +61,46 @@ module.exports = async function handler(req, res) {
       apiResults.push(mapCategoryResponse(category, data));
     }
 
-    res.status(200).json({
+    const categoriesWithData = apiResults.filter((category) => category.soldListings > 0);
+
+    const responseBody = {
       brand,
       generatedAt: new Date().toISOString(),
       source: "eBay Average Selling Price API",
-      categories: apiResults,
+      categories: categoriesWithData.length > 0 ? categoriesWithData : apiResults,
+    };
+
+    responseCache.set(normalizeBrand(brand), {
+      expiresAt: Date.now() + cacheTtlMilliseconds,
+      responseBody,
     });
+    res.status(200).json(responseBody);
   } catch (error) {
     res.status(500).json({ error: "Server error", message: error.message });
   }
 };
+
+function getCachedResponse(brand) {
+  const cacheKey = normalizeBrand(brand);
+  const cached = responseCache.get(cacheKey);
+  if (!cached || cached.expiresAt <= Date.now()) {
+    responseCache.delete(cacheKey);
+    return null;
+  }
+
+  return cached.responseBody;
+}
 
 function getCategoriesForBrand(brand) {
   return categoryProfiles[normalizeBrand(brand)] || categoryProfiles.default;
 }
 
 function normalizeBrand(brand) {
-  const normalized = String(brand).trim().toLowerCase().replace(/['’]/g, "");
+  const normalized = String(brand)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, "")
+    .replace(/\s+/g, " ");
   if (normalized === "levi" || normalized === "levis" || normalized === "levi s") return "levis";
   return normalized;
 }

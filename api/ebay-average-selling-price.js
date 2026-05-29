@@ -1,11 +1,31 @@
 const https = require("https");
 
-const categories = [
-  { name: "Fleece", keywords: ["fleece", "synchilla", "sweater", "pullover"] },
-  { name: "Jackets", keywords: ["jacket", "coat", "parka", "shell", "vest"] },
-  { name: "Shirts", keywords: ["shirt", "tee", "t-shirt", "flannel", "button"] },
-  { name: "Pants", keywords: ["pants", "jeans", "shorts", "trousers", "joggers"] },
-];
+const categoryProfiles = {
+  default: [
+    { name: "Jeans", query: "jeans", keywords: ["jeans", "denim"] },
+    { name: "Shirts", query: "shirt", keywords: ["shirt", "tee", "t-shirt", "flannel", "button"] },
+    { name: "Jackets", query: "jacket", keywords: ["jacket", "coat", "vest", "shell"] },
+    { name: "Dresses", query: "dress", keywords: ["dress"] },
+  ],
+  levis: [
+    { name: "Jeans", query: "jeans", keywords: ["jeans", "denim", "501", "505", "550", "wedgie"] },
+    { name: "Jackets", query: "jacket", keywords: ["jacket", "trucker", "sherpa", "coat"] },
+    { name: "Shirts", query: "shirt", keywords: ["shirt", "tee", "t-shirt", "western", "flannel"] },
+    { name: "Shorts", query: "shorts", keywords: ["shorts", "cutoff", "cutoffs", "shortalls"] },
+  ],
+  patagonia: [
+    { name: "Fleece", query: "fleece", keywords: ["fleece", "synchilla", "sweater", "pullover"] },
+    { name: "Jackets", query: "jacket", keywords: ["jacket", "coat", "parka", "shell", "vest"] },
+    { name: "Shirts", query: "shirt", keywords: ["shirt", "tee", "t-shirt", "flannel", "button"] },
+    { name: "Pants", query: "pants", keywords: ["pants", "shorts", "trousers", "joggers"] },
+  ],
+  "free people": [
+    { name: "Dresses", query: "dress", keywords: ["dress", "maxi", "midi", "mini"] },
+    { name: "Tops", query: "top", keywords: ["top", "blouse", "cami", "henley", "tunic"] },
+    { name: "Sweaters", query: "sweater", keywords: ["sweater", "cardigan", "pullover"] },
+    { name: "Jeans", query: "jeans", keywords: ["jeans", "denim", "flare", "barrel"] },
+  ],
+};
 
 const excludedKeywords = "damaged fake replica lot read stains broken parts only";
 const lookbackDays = 90;
@@ -25,17 +45,34 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const data = await findCompletedItems(brand);
+    const categories = getCategoriesForBrand(brand);
+    const apiResults = [];
+
+    for (const category of categories) {
+      const data = await findCompletedItems(`${brand} ${category.query}`);
+      apiResults.push(mapCategoryResponse(category, data));
+    }
+
     res.status(200).json({
       brand,
       generatedAt: new Date().toISOString(),
       source: "eBay Average Selling Price API",
-      categories: categories.map((category) => mapCategoryResponse(category, data)),
+      categories: apiResults,
     });
   } catch (error) {
     res.status(500).json({ error: "Server error", message: error.message });
   }
 };
+
+function getCategoriesForBrand(brand) {
+  return categoryProfiles[normalizeBrand(brand)] || categoryProfiles.default;
+}
+
+function normalizeBrand(brand) {
+  const normalized = String(brand).trim().toLowerCase().replace(/['’]/g, "");
+  if (normalized === "levi" || normalized === "levis" || normalized === "levi s") return "levis";
+  return normalized;
+}
 
 function findCompletedItems(keywords) {
   return postJson(
@@ -67,7 +104,7 @@ function mapCategoryResponse(category, data) {
     const title = String(product.title || "").toLowerCase();
     return category.keywords.some((keyword) => title.includes(keyword));
   });
-  const categoryProducts = matchedProducts.length > 0 ? matchedProducts : recentProducts.slice(0, 8);
+  const categoryProducts = matchedProducts;
   const soldListings = categoryProducts.length;
   const averageSalePrice = average(categoryProducts.map((product) => Number(product.sale_price)));
   const sellThroughRate = estimateSellThroughRate(soldListings, recentProducts.length);

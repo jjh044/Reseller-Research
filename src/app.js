@@ -11,6 +11,12 @@ const categorySeeds = {
     ["Shirts", 27, 0.44, ["Western Denim Shirt", "Graphic Logo Tee", "Plaid Work Shirt"]],
     ["Shorts", 24, 0.38, ["501 Cutoff Shorts", "High Loose Shorts", "Bermuda Denim Shorts"]],
   ],
+  levis: [
+    ["Jeans", 42, 0.79, ["501 Original Fit Jeans", "Wedgie Straight Jeans", "505 Regular Jeans"]],
+    ["Jackets", 58, 0.63, ["Type III Trucker Jacket", "Sherpa Trucker Jacket", "Vintage Denim Jacket"]],
+    ["Shirts", 27, 0.44, ["Western Denim Shirt", "Graphic Logo Tee", "Plaid Work Shirt"]],
+    ["Shorts", 24, 0.38, ["501 Cutoff Shorts", "High Loose Shorts", "Bermuda Denim Shorts"]],
+  ],
   "free people": [
     ["Dresses", 54, 0.71, ["Adella Slip Dress", "Feeling Groovy Maxi", "Oasis Midi Dress"]],
     ["Tops", 36, 0.65, ["Intimately Cami", "Easy Street Tunic", "We The Free Henley"]],
@@ -50,11 +56,23 @@ form.addEventListener("submit", async (event) => {
   }
 
   setLoading(true);
-  const marketplaceData = await fetchEbayAverageSellingPrice(brand);
-  const aiInsights = await generateAiInsights(marketplaceData);
-  currentReportData = { ...marketplaceData, aiInsights };
-  renderReport(currentReportData);
-  setLoading(false);
+  let loadError = null;
+  try {
+    const marketplaceData = await fetchEbayAverageSellingPrice(brand);
+    const aiInsights = await generateAiInsights(marketplaceData);
+    currentReportData = { ...marketplaceData, aiInsights };
+    renderReport(currentReportData);
+  } catch (error) {
+    console.error(error);
+    loadError = error;
+    currentReportData = null;
+    report.innerHTML = "";
+  } finally {
+    setLoading(false);
+    if (loadError) {
+      pdfStatus.textContent = "Could not load live eBay data. Check API keys and try again.";
+    }
+  }
 });
 
 pdfButton.addEventListener("click", () => {
@@ -81,20 +99,16 @@ function setLoading(isLoading) {
 
 async function fetchEbayAverageSellingPrice(brand) {
   if (window.location.protocol !== "file:") {
-    try {
-      const response = await fetch(`/api/ebay-average-selling-price?brand=${encodeURIComponent(brand)}`);
-      if (!response.ok) {
-        throw new Error(`eBay ASP request failed with ${response.status}`);
-      }
-
-      const data = await response.json();
-      return {
-        ...data,
-        generatedAt: new Date(data.generatedAt),
-      };
-    } catch (error) {
-      console.warn("Falling back to mock eBay ASP data:", error);
+    const response = await fetch(`/api/ebay-average-selling-price?brand=${encodeURIComponent(brand)}`);
+    if (!response.ok) {
+      throw new Error(`eBay ASP request failed with ${response.status}`);
     }
+
+    const data = await response.json();
+    return {
+      ...data,
+      generatedAt: new Date(data.generatedAt),
+    };
   }
 
   return fetchMockEbayAverageSellingPrice(brand);

@@ -70,7 +70,7 @@ form.addEventListener("submit", async (event) => {
   } finally {
     setLoading(false);
     if (loadError) {
-      pdfStatus.textContent = "Could not load live eBay data. Check API keys and try again.";
+      pdfStatus.textContent = loadError.message;
     }
   }
 });
@@ -101,7 +101,7 @@ async function fetchEbayAverageSellingPrice(brand) {
   if (window.location.protocol !== "file:") {
     const response = await fetch(`/api/ebay-average-selling-price?brand=${encodeURIComponent(brand)}`);
     if (!response.ok) {
-      throw new Error(`eBay ASP request failed with ${response.status}`);
+      throw new Error(await getApiErrorMessage(response, "Could not load live eBay data."));
     }
 
     const data = await response.json();
@@ -159,7 +159,7 @@ async function generateAiInsights(marketplaceData) {
       });
 
       if (!response.ok) {
-        throw new Error(`AI insights request failed with ${response.status}`);
+        throw new Error(await getApiErrorMessage(response, "Could not generate AI insights."));
       }
 
       return response.json();
@@ -169,6 +169,15 @@ async function generateAiInsights(marketplaceData) {
   }
 
   return generateMockAiInsights(marketplaceData);
+}
+
+async function getApiErrorMessage(response, fallbackMessage) {
+  try {
+    const details = await response.json();
+    return details.message || details.error || fallbackMessage;
+  } catch (error) {
+    return fallbackMessage;
+  }
 }
 
 async function generateMockAiInsights(marketplaceData) {

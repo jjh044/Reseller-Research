@@ -53,13 +53,8 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const categories = getCategoriesForBrand(brand);
-    const apiResults = [];
-
-    for (const category of categories) {
-      const data = await findCompletedItems(`${brand} ${category.query}`);
-      apiResults.push(mapCategoryResponse(category, data));
-    }
+    const data = await findCompletedItems(`${brand} clothing`);
+    const apiResults = getCategoriesForBrand(brand).map((category) => mapCategoryResponse(category, data));
 
     const categoriesWithData = apiResults.filter((category) => category.soldListings > 0);
 

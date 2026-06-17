@@ -51,6 +51,10 @@ input {
   display: flex;
   gap: 8px;
   align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
   padding: 6px;
   border: 1px solid rgba(217, 222, 215, 0.9);
   border-radius: 8px;

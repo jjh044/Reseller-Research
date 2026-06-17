@@ -334,15 +334,22 @@ button:disabled {
   font-weight: 700;
 }
 
-.sheet-actions button {
-  min-width: 148px;
-  white-space: nowrap;
-}
-
 .secondary-button {
   border: 1px solid var(--line);
   background: #ffffff;
   color: var(--green-dark);
+}
+
+.sheet-action-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sheet-action-buttons button {
+  min-width: 148px;
+  white-space: nowrap;
 }
 
 .brand-file-header {

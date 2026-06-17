@@ -37,6 +37,7 @@ const input = document.querySelector("#brand-input");
 const report = document.querySelector("#report");
 const loadingState = document.querySelector("#loading-state");
 const button = document.querySelector("#generate-button");
+const saveBrandFileButton = document.querySelector("#save-brand-file-button");
 const pdfButton = document.querySelector("#download-pdf-button");
 const pdfStatus = document.querySelector("#pdf-status");
 const labelCameraInput = document.querySelector("#label-camera-input");
@@ -163,6 +164,14 @@ async function generateReportForBrand(brand) {
   }
 }
 
+saveBrandFileButton.addEventListener("click", () => {
+  if (!currentReportData) return;
+
+  saveBrandFile(currentReportData);
+  renderBrandFile();
+  pdfStatus.textContent = `${currentReportData.brand} was added to Brand file.`;
+});
+
 pdfButton.addEventListener("click", () => {
   if (!currentReportData) return;
 
@@ -203,6 +212,7 @@ function setLoading(isLoading) {
 
   button.disabled = isLoading;
   button.textContent = isLoading ? "Generating..." : "Generate sheet";
+  saveBrandFileButton.disabled = isLoading || !currentReportData;
   pdfButton.disabled = isLoading || !currentReportData;
   pdfStatus.textContent = isLoading
     ? "Preparing the AI cheat sheet..."

@@ -2,3 +2,5 @@
 .server.pid
 .server.stderr.log
 .server.stdout.log
+
+.vercel

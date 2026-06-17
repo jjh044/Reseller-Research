@@ -39,7 +39,13 @@ const loadingState = document.querySelector("#loading-state");
 const button = document.querySelector("#generate-button");
 const pdfButton = document.querySelector("#download-pdf-button");
 const pdfStatus = document.querySelector("#pdf-status");
+const labelImageInput = document.querySelector("#label-image-input");
+const identifyLabelButton = document.querySelector("#identify-label-button");
+const labelPreview = document.querySelector("#label-preview");
+const labelPreviewImage = document.querySelector("#label-preview-image");
+const labelStatus = document.querySelector("#label-status");
 let currentReportData = null;
+let selectedLabelImage = null;
 
 const initialBrand = new URLSearchParams(window.location.search).get("brand");
 if (initialBrand) {
@@ -55,6 +61,66 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
+  await generateReportForBrand(brand);
+});
+
+labelImageInput.addEventListener("change", async () => {
+  const file = labelImageInput.files?.[0];
+  selectedLabelImage = null;
+  identifyLabelButton.disabled = true;
+
+  if (!file) {
+    labelPreview.hidden = true;
+    labelPreviewImage.removeAttribute("src");
+    labelStatus.textContent = "No label photo selected.";
+    return;
+  }
+
+  if (!file.type.startsWith("image/")) {
+    labelPreview.hidden = true;
+    labelStatus.textContent = "Choose an image file of the clothing label.";
+    return;
+  }
+
+  try {
+    labelStatus.textContent = "Preparing label photo...";
+    selectedLabelImage = await fileToImageDataUrl(file);
+    labelPreviewImage.src = selectedLabelImage;
+    labelPreview.hidden = false;
+    identifyLabelButton.disabled = false;
+    labelStatus.textContent = "Ready to identify this label.";
+  } catch (error) {
+    console.error(error);
+    labelPreview.hidden = true;
+    labelStatus.textContent = error.message;
+  }
+});
+
+identifyLabelButton.addEventListener("click", async () => {
+  if (!selectedLabelImage) return;
+
+  identifyLabelButton.disabled = true;
+  labelStatus.textContent = "Reading label...";
+  setLoading(true);
+
+  try {
+    const detected = await identifyClothingLabel(selectedLabelImage);
+    input.value = detected.brand;
+    labelStatus.textContent = `Detected ${detected.brand} (${formatConfidence(detected.confidence)} confidence).`;
+    await generateReportForBrand(detected.brand);
+  } catch (error) {
+    console.error(error);
+    currentReportData = null;
+    report.innerHTML = "";
+    labelStatus.textContent = error.message;
+    pdfStatus.textContent = error.message;
+  } finally {
+    setLoading(false);
+    identifyLabelButton.disabled = !selectedLabelImage;
+  }
+});
+
+async function generateReportForBrand(brand) {
   setLoading(true);
   let loadError = null;
   try {
@@ -73,7 +139,7 @@ form.addEventListener("submit", async (event) => {
       pdfStatus.textContent = loadError.message;
     }
   }
-});
+}
 
 pdfButton.addEventListener("click", () => {
   if (!currentReportData) return;
@@ -99,22 +165,78 @@ function setLoading(isLoading) {
 
 async function fetchEbayAverageSellingPrice(brand) {
   if (window.location.protocol !== "file:") {
-    const response = await fetch(`/api/ebay-average-selling-price?brand=${encodeURIComponent(brand)}`);
-    if (!response.ok) {
-      throw new Error(await getApiErrorMessage(response, "Could not load live eBay data."));
-    }
+    try {
+      const response = await fetch(`/api/ebay-average-selling-price?brand=${encodeURIComponent(brand)}`);
+      if (!response.ok) {
+        throw new Error(await getApiErrorMessage(response, "Could not load live eBay data."));
+      }
 
-    const data = await response.json();
-    return {
-      ...data,
-      generatedAt: new Date(data.generatedAt),
-    };
+      const data = await response.json();
+      return {
+        ...data,
+        generatedAt: new Date(data.generatedAt),
+      };
+    } catch (error) {
+      console.warn("Falling back to local marketplace estimate:", error);
+      return fetchMockEbayAverageSellingPrice(brand, error.message);
+    }
   }
 
   return fetchMockEbayAverageSellingPrice(brand);
 }
 
-async function fetchMockEbayAverageSellingPrice(brand) {
+async function identifyClothingLabel(imageDataUrl) {
+  const response = await fetch("/api/identify-label", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ image: imageDataUrl }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await getApiErrorMessage(response, "Could not identify this label."));
+  }
+
+  const detected = await response.json();
+  if (!detected.brand) {
+    throw new Error("Could not find a readable brand name on this label.");
+  }
+
+  return detected;
+}
+
+function fileToImageDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const image = new Image();
+      image.onload = () => resolve(resizeImageToDataUrl(image));
+      image.onerror = () => reject(new Error("Could not read this label image."));
+      image.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error("Could not load this label image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function resizeImageToDataUrl(image) {
+  const maxSide = 1280;
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  canvas.width = width;
+  canvas.height = height;
+  context.drawImage(image, 0, 0, width, height);
+
+  return canvas.toDataURL("image/jpeg", 0.82);
+}
+
+async function fetchMockEbayAverageSellingPrice(brand, fallbackReason = "") {
   await wait(520);
 
   const normalized = brand.toLowerCase();
@@ -142,7 +264,9 @@ async function fetchMockEbayAverageSellingPrice(brand) {
   return {
     brand,
     generatedAt: new Date(),
-    source: "Mock eBay Average Selling Price API",
+    source: fallbackReason
+      ? `Local estimate - live eBay data unavailable: ${fallbackReason}`
+      : "Mock eBay Average Selling Price API",
     categories,
   };
 }
@@ -367,6 +491,11 @@ function formatPercent(value) {
     style: "percent",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatConfidence(value) {
+  if (!Number.isFinite(Number(value))) return "unknown";
+  return formatPercent(Number(value));
 }
 
 function formatDate(date) {

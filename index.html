@@ -21,8 +21,8 @@
             <li><span>3</span>Download the PDF</li>
           </ol>
           <p class="intro">
-            Enter a clothing brand to generate a one-page view of resale pricing, sell-through,
-            strongest categories, and top sold comps.
+            Enter a clothing brand or snap a label photo to generate a one-page view of resale
+            pricing, sell-through, strongest categories, and top sold comps.
           </p>
         </div>
 
@@ -40,6 +40,22 @@
             <button type="submit" id="generate-button">Generate sheet</button>
           </div>
         </form>
+
+        <section class="label-scan" aria-labelledby="label-scan-title">
+          <div>
+            <p class="eyebrow" id="label-scan-title">Label scanner</p>
+            <p class="label-scan-copy">Snap or upload a clear clothing label photo.</p>
+          </div>
+          <label class="file-picker" for="label-image-input">
+            <span>Choose label photo</span>
+            <input id="label-image-input" type="file" accept="image/*" capture="environment" />
+          </label>
+          <div class="label-preview" id="label-preview" hidden>
+            <img id="label-preview-image" alt="Selected clothing label preview" />
+          </div>
+          <button type="button" id="identify-label-button" disabled>Identify label</button>
+          <p class="label-status" id="label-status">No label photo selected.</p>
+        </section>
 
         <ol class="flow-list" aria-label="Data flow">
           <li><span>1</span>Brand submitted</li>

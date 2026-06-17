@@ -3,6 +3,8 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
+loadLocalEnv();
+
 const PORT = Number(process.env.PORT || 3000);
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -57,6 +59,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/identify-label") {
+      await handleIdentifyLabel(req, res);
+      return;
+    }
+
     serveStatic(url.pathname, res);
   } catch (error) {
     sendJson(res, 500, { error: "Server error", message: error.message });
@@ -66,6 +73,26 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Reseller Research AI running at http://localhost:${PORT}`);
 });
+
+function loadLocalEnv() {
+  const envPath = path.join(__dirname, ".env");
+  if (!fs.existsSync(envPath)) return;
+
+  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex === -1) continue;
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const rawValue = trimmed.slice(separatorIndex + 1).trim();
+    if (!key || process.env[key] !== undefined) continue;
+
+    process.env[key] = rawValue.replace(/^["']|["']$/g, "");
+  }
+}
 
 async function handleAiInsights(req, res) {
   if (req.method !== "POST") {
@@ -86,6 +113,40 @@ async function handleAiInsights(req, res) {
 
   const aiInsights = await generateOpenAiInsights(marketplaceData);
   sendJson(res, 200, normalizeAiInsights(aiInsights, marketplaceData.categories));
+}
+
+async function handleIdentifyLabel(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed" });
+    return;
+  }
+
+  if (!OPENAI_API_KEY) {
+    sendJson(res, 500, { error: "Missing OPENAI_API_KEY environment variable" });
+    return;
+  }
+
+  const requestBody = await readJsonRequest(req, 7 * 1024 * 1024);
+  const image = String(requestBody.image || "");
+
+  if (!isSupportedImageDataUrl(image)) {
+    sendJson(res, 400, { error: "Expected image as a JPEG, PNG, or WebP data URL" });
+    return;
+  }
+
+  const labelResult = await identifyLabelBrand(image);
+  const normalized = normalizeLabelResult(labelResult);
+
+  if (!normalized.brand || normalized.confidence < 0.35) {
+    sendJson(res, 422, {
+      error: "Could not confidently identify a brand label",
+      message: "Try a sharper, closer photo with the full label text visible.",
+      ...normalized,
+    });
+    return;
+  }
+
+  sendJson(res, 200, normalized);
 }
 
 async function handleEbayAverageSellingPrice(url, res) {
@@ -201,6 +262,63 @@ function generateOpenAiInsights(marketplaceData) {
   }).then((response) => JSON.parse(extractResponseText(response)));
 }
 
+function identifyLabelBrand(imageDataUrl) {
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      brand: { type: "string" },
+      labelText: { type: "string" },
+      confidence: { type: "number", minimum: 0, maximum: 1 },
+      possibleBrands: {
+        type: "array",
+        maxItems: 5,
+        items: { type: "string" },
+      },
+    },
+    required: ["brand", "labelText", "confidence", "possibleBrands"],
+  };
+
+  const payload = {
+    model: OPENAI_MODEL,
+    input: [
+      {
+        role: "system",
+        content:
+          "You identify clothing brand labels from photos. Return only visible or strongly implied label text. If the brand is unclear, use an empty brand and low confidence.",
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text:
+              "Read this clothing label photo. Identify the most likely clothing brand for resale research. Ignore size, RN numbers, fabric content, care instructions, and country of origin unless they help identify the brand.",
+          },
+          {
+            type: "input_image",
+            image_url: imageDataUrl,
+          },
+        ],
+      },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "clothing_label_identification",
+        strict: true,
+        schema,
+      },
+    },
+    max_output_tokens: 300,
+  };
+
+  return postJson("api.openai.com", "/v1/responses", payload, {
+    Authorization: `Bearer ${OPENAI_API_KEY}`,
+    "Content-Type": "application/json",
+  }).then((response) => JSON.parse(extractResponseText(response)));
+}
+
 function findCompletedItems(keywords) {
   const body = JSON.stringify({
     keywords,
@@ -241,7 +359,14 @@ function findCompletedItems(keywords) {
         }
 
         if (response.statusCode < 200 || response.statusCode >= 300 || parsed.success === false) {
-          reject(new Error(parsed.error || `RapidAPI request failed with ${response.statusCode}`));
+          const apiMessage = parsed.message || parsed.error?.message || parsed.error;
+          reject(
+            new Error(
+              apiMessage
+                ? `RapidAPI request failed with ${response.statusCode}: ${apiMessage}`
+                : `RapidAPI request failed with ${response.statusCode}`,
+            ),
+          );
           return;
         }
 
@@ -323,11 +448,41 @@ function normalizeAiInsights(aiInsights, availableCategories) {
   };
 }
 
-function readJsonRequest(req) {
+function normalizeLabelResult(labelResult) {
+  const brand = String(labelResult.brand || "").trim();
+  const labelText = String(labelResult.labelText || "").trim();
+  const confidence = clamp(Number(labelResult.confidence), 0, 1);
+  const possibleBrands = Array.isArray(labelResult.possibleBrands)
+    ? labelResult.possibleBrands.map((item) => String(item).trim()).filter(Boolean).slice(0, 5)
+    : [];
+
+  return {
+    brand,
+    labelText,
+    confidence: Number.isFinite(confidence) ? confidence : 0,
+    possibleBrands,
+  };
+}
+
+function isSupportedImageDataUrl(value) {
+  return /^data:image\/(?:jpeg|jpg|png|webp);base64,[a-z0-9+/=\s]+$/i.test(value);
+}
+
+function readJsonRequest(req, maxBytes = 1024 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = [];
+    let totalBytes = 0;
 
-    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("data", (chunk) => {
+      totalBytes += chunk.length;
+      if (totalBytes > maxBytes) {
+        reject(new Error("Request body is too large"));
+        req.destroy();
+        return;
+      }
+
+      chunks.push(chunk);
+    });
     req.on("end", () => {
       try {
         resolve(JSON.parse(Buffer.concat(chunks).toString() || "{}"));

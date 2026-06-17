@@ -46,10 +46,16 @@
             <p class="eyebrow" id="label-scan-title">Label scanner</p>
             <p class="label-scan-copy">Snap or upload a clear clothing label photo.</p>
           </div>
-          <label class="file-picker" for="label-image-input">
-            <span>Choose label photo</span>
-            <input id="label-image-input" type="file" accept="image/*" capture="environment" />
-          </label>
+          <div class="label-input-actions">
+            <label class="file-picker" for="label-camera-input">
+              <span>Take photo</span>
+              <input id="label-camera-input" type="file" accept="image/*" capture="environment" />
+            </label>
+            <label class="file-picker secondary" for="label-image-input">
+              <span>Upload image</span>
+              <input id="label-image-input" type="file" accept="image/*" />
+            </label>
+          </div>
           <div class="label-preview" id="label-preview" hidden>
             <img id="label-preview-image" alt="Selected clothing label preview" />
           </div>

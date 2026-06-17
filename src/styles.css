@@ -229,6 +229,12 @@ button:disabled {
   line-height: 1.45;
 }
 
+.label-input-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .file-picker {
   display: grid;
   min-height: 52px;
@@ -239,6 +245,11 @@ button:disabled {
   color: var(--green-dark);
   font-weight: 900;
   cursor: pointer;
+}
+
+.file-picker.secondary {
+  border-style: solid;
+  color: var(--blue);
 }
 
 .file-picker input {

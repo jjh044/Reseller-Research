@@ -39,6 +39,7 @@ const loadingState = document.querySelector("#loading-state");
 const button = document.querySelector("#generate-button");
 const pdfButton = document.querySelector("#download-pdf-button");
 const pdfStatus = document.querySelector("#pdf-status");
+const labelCameraInput = document.querySelector("#label-camera-input");
 const labelImageInput = document.querySelector("#label-image-input");
 const identifyLabelButton = document.querySelector("#identify-label-button");
 const labelPreview = document.querySelector("#label-preview");
@@ -64,8 +65,17 @@ form.addEventListener("submit", async (event) => {
   await generateReportForBrand(brand);
 });
 
-labelImageInput.addEventListener("change", async () => {
-  const file = labelImageInput.files?.[0];
+labelCameraInput.addEventListener("change", () => {
+  labelImageInput.value = "";
+  handleLabelImageSelection(labelCameraInput.files?.[0]);
+});
+
+labelImageInput.addEventListener("change", () => {
+  labelCameraInput.value = "";
+  handleLabelImageSelection(labelImageInput.files?.[0]);
+});
+
+async function handleLabelImageSelection(file) {
   selectedLabelImage = null;
   identifyLabelButton.disabled = true;
 
@@ -94,7 +104,7 @@ labelImageInput.addEventListener("change", async () => {
     labelPreview.hidden = true;
     labelStatus.textContent = error.message;
   }
-});
+}
 
 identifyLabelButton.addEventListener("click", async () => {
   if (!selectedLabelImage) return;

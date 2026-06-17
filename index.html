@@ -8,70 +8,79 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="search-panel" aria-labelledby="app-title">
-        <div class="brand-mark" aria-hidden="true">
-          <span>RI</span>
-        </div>
-        <div>
-          <p class="eyebrow">Reseller intelligence</p>
-          <h1 id="app-title">Research Brands In Seconds</h1>
-          <ol class="instruction-flow" aria-label="App instructions">
-            <li><span>1</span>Enter a clothing brand</li>
-            <li><span>2</span>Generate a reseller sheet</li>
-            <li><span>3</span>Download the PDF</li>
-          </ol>
-          <p class="intro">
-            Enter a clothing brand or snap a label photo to generate a one-page view of resale
-            pricing, sell-through, strongest categories, and top sold comps.
-          </p>
-        </div>
+      <nav class="app-tabs" aria-label="App sections">
+        <button type="button" class="tab-button is-active" data-tab-target="home">Home</button>
+        <button type="button" class="tab-button" data-tab-target="results">Results</button>
+        <button type="button" class="tab-button" data-tab-target="brand-file">Brand file</button>
+      </nav>
 
-        <form class="brand-form" id="brand-form">
-          <label for="brand-input">Brand name</label>
-          <div class="input-row">
-            <input
-              id="brand-input"
-              name="brand"
-              type="text"
-              autocomplete="off"
-              placeholder="Try Patagonia, Levi's, or Free People"
-              value="Patagonia"
-            />
-            <button type="submit" id="generate-button">Generate sheet</button>
+      <section class="tab-panel is-active" data-tab-panel="home">
+        <div class="search-panel" aria-labelledby="app-title">
+          <div class="brand-mark" aria-hidden="true">
+            <span>RI</span>
           </div>
-        </form>
-
-        <section class="label-scan" aria-labelledby="label-scan-title">
           <div>
-            <p class="eyebrow" id="label-scan-title">Label scanner</p>
-            <p class="label-scan-copy">Snap or upload a clear clothing label photo.</p>
+            <p class="eyebrow">Reseller intelligence</p>
+            <h1 id="app-title">Research Brands In Seconds</h1>
+            <ol class="instruction-flow" aria-label="App instructions">
+              <li><span>1</span>Enter a clothing brand</li>
+              <li><span>2</span>Generate a reseller sheet</li>
+              <li><span>3</span>Download the PDF</li>
+            </ol>
+            <p class="intro">
+              Enter a clothing brand or snap a label photo to generate a one-page view of resale
+              pricing, sell-through, strongest categories, and top sold comps.
+            </p>
           </div>
-          <div class="label-input-actions">
-            <label class="file-picker" for="label-camera-input">
-              <span>Take photo</span>
-              <input id="label-camera-input" type="file" accept="image/*" capture="environment" />
-            </label>
-            <label class="file-picker secondary" for="label-image-input">
-              <span>Upload image</span>
-              <input id="label-image-input" type="file" accept="image/*" />
-            </label>
-          </div>
-          <div class="label-preview" id="label-preview" hidden>
-            <img id="label-preview-image" alt="Selected clothing label preview" />
-          </div>
-          <button type="button" id="identify-label-button" disabled>Identify label</button>
-          <p class="label-status" id="label-status">No label photo selected.</p>
-        </section>
 
-        <ol class="flow-list" aria-label="Data flow">
-          <li><span>1</span>Brand submitted</li>
-          <li><span>2</span>eBay ASP data requested</li>
-          <li><span>3</span>AI insight layer created</li>
-          <li><span>4</span>PDF cheat sheet delivered</li>
-        </ol>
+          <form class="brand-form" id="brand-form">
+            <label for="brand-input">Brand name</label>
+            <div class="input-row">
+              <input
+                id="brand-input"
+                name="brand"
+                type="text"
+                autocomplete="off"
+                placeholder="Try Patagonia, Levi's, or Free People"
+                value="Patagonia"
+              />
+              <button type="submit" id="generate-button">Generate sheet</button>
+            </div>
+          </form>
+
+          <section class="label-scan" aria-labelledby="label-scan-title">
+            <div>
+              <p class="eyebrow" id="label-scan-title">Label scanner</p>
+              <p class="label-scan-copy">Snap or upload a clear clothing label photo.</p>
+            </div>
+            <div class="label-input-actions">
+              <label class="file-picker" for="label-camera-input">
+                <span>Take photo</span>
+                <input id="label-camera-input" type="file" accept="image/*" capture="environment" />
+              </label>
+              <label class="file-picker secondary" for="label-image-input">
+                <span>Upload image</span>
+                <input id="label-image-input" type="file" accept="image/*" />
+              </label>
+            </div>
+            <div class="label-preview" id="label-preview" hidden>
+              <img id="label-preview-image" alt="Selected clothing label preview" />
+            </div>
+            <button type="button" id="identify-label-button" disabled>Identify label</button>
+            <p class="label-status" id="label-status">No label photo selected.</p>
+          </section>
+
+          <ol class="flow-list" aria-label="Data flow">
+            <li><span>1</span>Brand submitted</li>
+            <li><span>2</span>eBay ASP data requested</li>
+            <li><span>3</span>AI insight layer created</li>
+            <li><span>4</span>PDF cheat sheet delivered</li>
+          </ol>
+        </div>
       </section>
 
-      <section class="sheet-panel" aria-live="polite">
+      <section class="tab-panel" data-tab-panel="results">
+        <div class="sheet-panel" aria-live="polite">
         <div id="loading-state" class="loading-state" hidden>
           <div class="spinner" aria-hidden="true"></div>
           <p>Building reseller intelligence sheet...</p>
@@ -84,7 +93,26 @@
           <button type="button" id="download-pdf-button" disabled>Download PDF</button>
         </div>
 
-        <article id="report" class="report"></article>
+        <article id="report" class="report">
+          <div class="empty-state">Generate a brand sheet from Home to view results here.</div>
+        </article>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-tab-panel="brand-file">
+        <div class="brand-file-panel">
+          <header class="brand-file-header">
+            <div>
+              <p class="eyebrow">Brand file</p>
+              <h2>Saved Brand PDFs</h2>
+            </div>
+            <p id="brand-file-count">0 saved sheets</p>
+          </header>
+          <div id="brand-file-empty" class="empty-state">
+            Download a brand PDF to save it here.
+          </div>
+          <div id="brand-file-list" class="brand-file-list" aria-live="polite"></div>
+        </div>
       </section>
     </main>
 

@@ -45,6 +45,12 @@ const identifyLabelButton = document.querySelector("#identify-label-button");
 const labelPreview = document.querySelector("#label-preview");
 const labelPreviewImage = document.querySelector("#label-preview-image");
 const labelStatus = document.querySelector("#label-status");
+const tabButtons = document.querySelectorAll("[data-tab-target]");
+const tabPanels = document.querySelectorAll("[data-tab-panel]");
+const brandFileCount = document.querySelector("#brand-file-count");
+const brandFileEmpty = document.querySelector("#brand-file-empty");
+const brandFileList = document.querySelector("#brand-file-list");
+const brandFileStorageKey = "reseller-brand-file-v1";
 let currentReportData = null;
 let selectedLabelImage = null;
 
@@ -52,6 +58,12 @@ const initialBrand = new URLSearchParams(window.location.search).get("brand");
 if (initialBrand) {
   input.value = initialBrand;
 }
+
+tabButtons.forEach((tabButton) => {
+  tabButton.addEventListener("click", () => {
+    activateTab(tabButton.dataset.tabTarget);
+  });
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -154,13 +166,41 @@ async function generateReportForBrand(brand) {
 pdfButton.addEventListener("click", () => {
   if (!currentReportData) return;
 
+  saveBrandFile(currentReportData);
+  renderBrandFile();
+
   const previousTitle = document.title;
   document.title = `${slugify(currentReportData.brand)}-reseller-brand-intelligence`;
   window.print();
   document.title = previousTitle;
 });
 
+brandFileList.addEventListener("click", (event) => {
+  const actionButton = event.target.closest("[data-brand-file-action]");
+  if (!actionButton) return;
+
+  const brandFile = getBrandFiles().find((item) => item.id === actionButton.dataset.brandFileId);
+  if (!brandFile) return;
+
+  currentReportData = reviveReportData(brandFile.reportData);
+  renderReport(currentReportData);
+  activateTab("results");
+
+  if (actionButton.dataset.brandFileAction === "print") {
+    const previousTitle = document.title;
+    document.title = `${slugify(currentReportData.brand)}-reseller-brand-intelligence`;
+    window.print();
+    document.title = previousTitle;
+  }
+});
+
+renderBrandFile();
+
 function setLoading(isLoading) {
+  if (isLoading) {
+    activateTab("results");
+  }
+
   button.disabled = isLoading;
   button.textContent = isLoading ? "Generating..." : "Generate sheet";
   pdfButton.disabled = isLoading || !currentReportData;
@@ -171,6 +211,83 @@ function setLoading(isLoading) {
       : "Generate a sheet to enable PDF export.";
   loadingState.hidden = !isLoading;
   report.classList.toggle("is-muted", isLoading);
+}
+
+function activateTab(tabName) {
+  tabButtons.forEach((tabButton) => {
+    const isActive = tabButton.dataset.tabTarget === tabName;
+    tabButton.classList.toggle("is-active", isActive);
+    tabButton.setAttribute("aria-selected", String(isActive));
+  });
+
+  tabPanels.forEach((tabPanel) => {
+    tabPanel.classList.toggle("is-active", tabPanel.dataset.tabPanel === tabName);
+  });
+}
+
+function saveBrandFile(reportData) {
+  const savedFiles = getBrandFiles();
+  const id = normalizeBrandFileId(reportData.brand);
+  const savedFile = {
+    id,
+    brand: reportData.brand,
+    savedAt: new Date().toISOString(),
+    reportData: serializeReportData(reportData),
+  };
+  const nextFiles = savedFiles.filter((item) => item.id !== id).concat(savedFile);
+
+  localStorage.setItem(brandFileStorageKey, JSON.stringify(nextFiles));
+}
+
+function getBrandFiles() {
+  try {
+    const files = JSON.parse(localStorage.getItem(brandFileStorageKey) || "[]");
+    return Array.isArray(files) ? files : [];
+  } catch (error) {
+    console.warn("Could not read brand file storage:", error);
+    return [];
+  }
+}
+
+function renderBrandFile() {
+  const savedFiles = getBrandFiles().sort((a, b) => a.brand.localeCompare(b.brand));
+  brandFileCount.textContent = `${savedFiles.length} saved ${savedFiles.length === 1 ? "sheet" : "sheets"}`;
+  brandFileEmpty.hidden = savedFiles.length > 0;
+
+  brandFileList.innerHTML = savedFiles
+    .map(
+      (savedFile) => `
+        <article class="brand-file-item">
+          <div>
+            <h3>${escapeHtml(savedFile.brand)}</h3>
+            <p>Saved ${formatDate(new Date(savedFile.savedAt))}</p>
+          </div>
+          <div class="brand-file-actions">
+            <button type="button" data-brand-file-action="open" data-brand-file-id="${escapeHtml(savedFile.id)}">
+              Open
+            </button>
+            <button type="button" class="secondary-button" data-brand-file-action="print" data-brand-file-id="${escapeHtml(savedFile.id)}">
+              Download PDF
+            </button>
+          </div>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+function serializeReportData(reportData) {
+  return {
+    ...reportData,
+    generatedAt: reportData.generatedAt instanceof Date ? reportData.generatedAt.toISOString() : reportData.generatedAt,
+  };
+}
+
+function reviveReportData(reportData) {
+  return {
+    ...reportData,
+    generatedAt: new Date(reportData.generatedAt),
+  };
 }
 
 async function fetchEbayAverageSellingPrice(brand) {
@@ -535,6 +652,10 @@ function slugify(value) {
     .replace(/^-+|-+$/g, "");
 }
 
+function normalizeBrandFileId(brand) {
+  return slugify(brand) || `brand-${Date.now()}`;
+}
+
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -544,5 +665,3 @@ function wait(milliseconds) {
     setTimeout(resolve, milliseconds);
   });
 }
-
-form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));

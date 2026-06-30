@@ -6,6 +6,7 @@
     "convex:deploy": "convex deploy"
   },
   "dependencies": {
+    "@clerk/backend": "^2.19.0",
     "convex": "^1.25.4"
   },
   "engines": {

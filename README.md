@@ -73,4 +73,15 @@ The Brand file syncs to Convex when `CONVEX_HTTP_URL` is configured. If that val
 5. Add `CONVEX_HTTP_URL` to the linked Vercel project for Production and Preview.
 6. Redeploy the Vercel project.
 
-Until user accounts are added, saved Brand files are tied to an anonymous browser client id stored on the device.
+With Clerk configured, saved Brand files are tied to the signed-in Clerk user id.
+
+## User Accounts
+
+User accounts are handled by Clerk. The app requires sign in before the main dashboard is shown, and Brand file API requests verify the Clerk session before saving or loading reports.
+
+Configure these Vercel environment variables for Production and Preview:
+
+- `VITE_CLERK_PUBLISHABLE_KEY`
+- `CLERK_SECRET_KEY`
+
+In Clerk, enable Email address sign-up/sign-in and password authentication. Clerk handles forgot-password emails and the user menu/logout flow.

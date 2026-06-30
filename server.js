@@ -3,6 +3,7 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const brandFilesHandler = require("./api/brand-files");
+const configHandler = require("./api/config");
 
 loadLocalEnv();
 
@@ -67,6 +68,11 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/brand-files") {
       await handleBrandFiles(req, res);
+      return;
+    }
+
+    if (url.pathname === "/api/config") {
+      await handleConfig(req, res);
       return;
     }
 
@@ -162,6 +168,18 @@ async function handleBrandFiles(req, res) {
   }
 
   await brandFilesHandler(serverlessReq, {
+    status(statusCode) {
+      return {
+        json(body) {
+          sendJson(res, statusCode, body);
+        },
+      };
+    },
+  });
+}
+
+async function handleConfig(req, res) {
+  await configHandler(req, {
     status(statusCode) {
       return {
         json(body) {

@@ -32,6 +32,15 @@ const fallbackCategories = [
   ["Dresses", 44, 0.47, ["Midi Dress", "Wrap Dress", "Sleeveless Maxi Dress"]],
 ];
 
+const appShell = document.querySelector("#app-shell");
+const authShell = document.querySelector("#auth-shell");
+const authActions = document.querySelector("#auth-actions");
+const authStatus = document.querySelector("#auth-status");
+const authMount = document.querySelector("#clerk-auth-mount");
+const userButtonMount = document.querySelector("#user-button-mount");
+const accountEmail = document.querySelector("#account-email");
+const showSignInButton = document.querySelector("#show-sign-in-button");
+const showSignUpButton = document.querySelector("#show-sign-up-button");
 const form = document.querySelector("#brand-form");
 const input = document.querySelector("#brand-input");
 const report = document.querySelector("#report");
@@ -52,14 +61,16 @@ const brandFileCount = document.querySelector("#brand-file-count");
 const brandFileEmpty = document.querySelector("#brand-file-empty");
 const brandFileList = document.querySelector("#brand-file-list");
 const brandFileStorageKey = "reseller-brand-file-v1";
-const brandFileClientStorageKey = "reseller-brand-client-id-v1";
 let currentReportData = null;
 let selectedLabelImage = null;
+let clerk = null;
 
 const initialBrand = new URLSearchParams(window.location.search).get("brand");
 if (initialBrand) {
   input.value = initialBrand;
 }
+
+await initializeAuth();
 
 tabButtons.forEach((tabButton) => {
   tabButton.addEventListener("click", () => {
@@ -165,19 +176,28 @@ async function generateReportForBrand(brand) {
   }
 }
 
-saveBrandFileButton.addEventListener("click", () => {
+saveBrandFileButton.addEventListener("click", async () => {
   if (!currentReportData) return;
 
-  saveBrandFile(currentReportData).then(() => {
+  try {
+    await saveBrandFile(currentReportData);
     renderBrandFile();
     pdfStatus.textContent = `${currentReportData.brand} was added to Brand file.`;
-  });
+  } catch (error) {
+    console.error(error);
+    pdfStatus.textContent = error.message;
+  }
 });
 
 pdfButton.addEventListener("click", () => {
   if (!currentReportData) return;
 
-  saveBrandFile(currentReportData).then(renderBrandFile);
+  saveBrandFile(currentReportData)
+    .then(renderBrandFile)
+    .catch((error) => {
+      console.error(error);
+      pdfStatus.textContent = error.message;
+    });
 
   const previousTitle = document.title;
   document.title = `${slugify(currentReportData.brand)}-reseller-brand-intelligence`;
@@ -204,7 +224,110 @@ brandFileList.addEventListener("click", async (event) => {
   }
 });
 
-renderBrandFile();
+showSignInButton.addEventListener("click", () => {
+  mountAuthView("sign-in");
+});
+
+showSignUpButton.addEventListener("click", () => {
+  mountAuthView("sign-up");
+});
+
+async function initializeAuth() {
+  try {
+    const configResponse = await fetch("/api/config");
+    if (!configResponse.ok) throw new Error("Could not load app configuration.");
+
+    const config = await configResponse.json();
+    if (!config.clerkPublishableKey) {
+      throw new Error("Clerk publishable key is not configured.");
+    }
+
+    await loadClerkBrowserSdk(config.clerkPublishableKey);
+    clerk = window.Clerk;
+    await clerk.load();
+
+    clerk.addListener(() => {
+      syncAuthState(config.clerkServerConfigured);
+    });
+
+    syncAuthState(config.clerkServerConfigured);
+  } catch (error) {
+    console.error(error);
+    authStatus.textContent = error.message;
+    authActions.hidden = true;
+    appShell.hidden = true;
+    authShell.hidden = false;
+  }
+}
+
+function syncAuthState(isServerAuthConfigured) {
+  const isSignedIn = Boolean(clerk.user);
+
+  if (!isSignedIn) {
+    appShell.hidden = true;
+    authShell.hidden = false;
+    authStatus.textContent = isServerAuthConfigured
+      ? ""
+      : "Sign in is available. Add CLERK_SECRET_KEY in Vercel to enable account-based Brand files.";
+    authActions.hidden = false;
+    mountAuthView("sign-in");
+    return;
+  }
+
+  authShell.hidden = true;
+  appShell.hidden = false;
+  accountEmail.textContent = clerk.user.primaryEmailAddress?.emailAddress || clerk.user.fullName || "Signed in";
+  userButtonMount.innerHTML = "";
+  clerk.mountUserButton(userButtonMount);
+  if (!isServerAuthConfigured) {
+    pdfStatus.textContent = "Add CLERK_SECRET_KEY in Vercel to enable account-based Brand files.";
+  }
+  renderBrandFile();
+}
+
+function mountAuthView(view) {
+  if (!clerk || !authMount) return;
+
+  authMount.innerHTML = "";
+  authStatus.textContent = "";
+  if (view === "sign-up") {
+    clerk.mountSignUp(authMount, {
+      signInUrl: window.location.href,
+      afterSignUpUrl: window.location.href,
+      afterSignInUrl: window.location.href,
+    });
+  } else {
+    clerk.mountSignIn(authMount, {
+      signUpUrl: window.location.href,
+      afterSignInUrl: window.location.href,
+      afterSignUpUrl: window.location.href,
+    });
+  }
+}
+
+function loadClerkBrowserSdk(publishableKey) {
+  return new Promise((resolve, reject) => {
+    if (window.Clerk) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.async = true;
+    script.crossOrigin = "anonymous";
+    script.setAttribute("data-clerk-publishable-key", publishableKey);
+    script.src = "https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Could not load Clerk sign in."));
+    document.head.appendChild(script);
+  });
+}
+
+async function getAuthToken() {
+  const token = await clerk?.session?.getToken();
+  if (!token) throw new Error("Sign in is required to use Brand files.");
+  return token;
+}
 
 function setLoading(isLoading) {
   if (isLoading) {
@@ -250,7 +373,7 @@ async function saveBrandFile(reportData) {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        "X-Reseller-Client-Id": getBrandFileClientId(),
+        Authorization: `Bearer ${await getAuthToken()}`,
       },
       body: JSON.stringify(savedFile),
     });
@@ -262,6 +385,7 @@ async function saveBrandFile(reportData) {
     return response.json();
   } catch (error) {
     console.warn("Saving Brand file locally:", error);
+    if (clerk?.user) throw error;
     saveLocalBrandFile(savedFile);
     return savedFile;
   }
@@ -271,7 +395,7 @@ async function getBrandFiles() {
   try {
     const response = await fetch("/api/brand-files", {
       headers: {
-        "X-Reseller-Client-Id": getBrandFileClientId(),
+        Authorization: `Bearer ${await getAuthToken()}`,
       },
     });
 
@@ -282,6 +406,7 @@ async function getBrandFiles() {
     return response.json();
   } catch (error) {
     console.warn("Loading Brand file locally:", error);
+    if (clerk?.user) throw error;
     return getLocalBrandFiles();
   }
 }
@@ -303,9 +428,21 @@ function getLocalBrandFiles() {
 }
 
 async function renderBrandFile() {
-  const savedFiles = (await getBrandFiles()).sort((a, b) => a.brand.localeCompare(b.brand));
+  let savedFiles = [];
+  try {
+    savedFiles = (await getBrandFiles()).sort((a, b) => a.brand.localeCompare(b.brand));
+  } catch (error) {
+    console.error(error);
+    brandFileCount.textContent = "Brand file unavailable";
+    brandFileEmpty.hidden = false;
+    brandFileEmpty.textContent = error.message;
+    brandFileList.innerHTML = "";
+    return;
+  }
+
   brandFileCount.textContent = `${savedFiles.length} saved ${savedFiles.length === 1 ? "sheet" : "sheets"}`;
   brandFileEmpty.hidden = savedFiles.length > 0;
+  brandFileEmpty.textContent = "Download a brand PDF to save it here.";
 
   brandFileList.innerHTML = savedFiles
     .map(
@@ -327,19 +464,6 @@ async function renderBrandFile() {
       `,
     )
     .join("");
-}
-
-function getBrandFileClientId() {
-  const savedClientId = localStorage.getItem(brandFileClientStorageKey);
-  if (savedClientId) return savedClientId;
-
-  const clientId =
-    typeof window.crypto?.randomUUID === "function"
-      ? window.crypto.randomUUID()
-      : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-  localStorage.setItem(brandFileClientStorageKey, clientId);
-  return clientId;
 }
 
 function serializeReportData(reportData) {

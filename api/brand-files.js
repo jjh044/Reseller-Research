@@ -1,4 +1,5 @@
 const https = require("https");
+const { verifyToken } = require("@clerk/backend");
 
 module.exports = async function handler(req, res) {
   try {
@@ -7,9 +8,9 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const clientId = getClientId(req);
+    const clientId = await getAuthenticatedOwnerId(req);
     if (!clientId) {
-      res.status(400).json({ error: "Missing brand file client id" });
+      res.status(401).json({ error: "Sign in is required to use Brand files" });
       return;
     }
 
@@ -32,11 +33,20 @@ module.exports = async function handler(req, res) {
   }
 };
 
-function getClientId(req) {
-  return String(req.headers["x-reseller-client-id"] || "")
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]/g, "")
-    .slice(0, 80);
+async function getAuthenticatedOwnerId(req) {
+  if (!process.env.CLERK_SECRET_KEY) {
+    throw new Error("Missing CLERK_SECRET_KEY environment variable");
+  }
+
+  const authorization = String(req.headers.authorization || "");
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  if (!match) return "";
+
+  const payload = await verifyToken(match[1], {
+    secretKey: process.env.CLERK_SECRET_KEY,
+  });
+
+  return payload?.sub ? `user:${payload.sub}` : "";
 }
 
 function normalizeBrandFile(body) {

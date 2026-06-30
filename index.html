@@ -7,12 +7,37 @@
     <link rel="stylesheet" href="src/styles.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <nav class="app-tabs" aria-label="App sections">
-        <button type="button" class="tab-button is-active" data-tab-target="home">Home</button>
-        <button type="button" class="tab-button" data-tab-target="results">Results</button>
-        <button type="button" class="tab-button" data-tab-target="brand-file">Brand file</button>
-      </nav>
+    <section class="auth-shell" id="auth-shell" aria-live="polite">
+      <div class="auth-panel">
+        <div class="brand-mark" aria-hidden="true">
+          <span>RI</span>
+        </div>
+        <div>
+          <p class="eyebrow">Reseller intelligence</p>
+          <h1>Sign In To Research</h1>
+          <p class="intro">Save brand sheets to your account and pull them back up from any device.</p>
+        </div>
+        <div class="auth-actions" id="auth-actions" hidden>
+          <button type="button" id="show-sign-in-button">Sign in</button>
+          <button type="button" id="show-sign-up-button" class="secondary-button">Create account</button>
+        </div>
+        <div id="auth-status" class="auth-status">Loading sign in...</div>
+        <div id="clerk-auth-mount" class="clerk-auth-mount"></div>
+      </div>
+    </section>
+
+    <main class="app-shell" id="app-shell" hidden>
+      <header class="app-header">
+        <nav class="app-tabs" aria-label="App sections">
+          <button type="button" class="tab-button is-active" data-tab-target="home">Home</button>
+          <button type="button" class="tab-button" data-tab-target="results">Results</button>
+          <button type="button" class="tab-button" data-tab-target="brand-file">Brand file</button>
+        </nav>
+        <div class="account-bar">
+          <span id="account-email"></span>
+          <div id="user-button-mount"></div>
+        </div>
+      </header>
 
       <section class="tab-panel is-active" data-tab-panel="home">
         <div class="search-panel" aria-labelledby="app-title">

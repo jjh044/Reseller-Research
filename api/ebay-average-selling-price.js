@@ -135,7 +135,7 @@ function findCompletedItems(keywords) {
     {
       keywords,
       excluded_keywords: excludedKeywords,
-      max_search_results: "200",
+      max_search_results: "240",
     },
     {
       "x-rapidapi-key": process.env.RAPIDAPI_KEY,

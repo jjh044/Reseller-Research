@@ -364,7 +364,7 @@ function findCompletedItems(keywords) {
   const body = JSON.stringify({
     keywords,
     excluded_keywords: excludedKeywords,
-    max_search_results: "200",
+    max_search_results: "240",
   });
 
   const options = {

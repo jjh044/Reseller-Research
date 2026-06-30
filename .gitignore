@@ -2,5 +2,6 @@
 .server.pid
 .server.stderr.log
 .server.stdout.log
+node_modules/
 
 .vercel

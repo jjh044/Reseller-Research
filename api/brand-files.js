@@ -1,11 +1,9 @@
 const https = require("https");
 
-const tableName = "brand_files";
-
 module.exports = async function handler(req, res) {
   try {
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      res.status(501).json({ error: "Brand file database is not configured" });
+    if (!getConvexHttpUrl()) {
+      res.status(501).json({ error: "Brand file Convex database is not configured" });
       return;
     }
 
@@ -16,25 +14,15 @@ module.exports = async function handler(req, res) {
     }
 
     if (req.method === "GET") {
-      const rows = await requestSupabase(
-        "GET",
-        `/${tableName}?client_id=eq.${encodeURIComponent(clientId)}&select=brand_id,brand,saved_at,report_data&order=brand.asc`,
-      );
-      res.status(200).json(rows.map(mapBrandFileRow));
+      const files = await requestConvex("GET", "/brand-files", undefined, clientId);
+      res.status(200).json(files);
       return;
     }
 
     if (req.method === "PUT") {
-      const brandFile = normalizeBrandFile(req.body, clientId);
-      const rows = await requestSupabase(
-        "POST",
-        `/${tableName}?on_conflict=client_id,brand_id`,
-        [brandFile],
-        {
-          Prefer: "resolution=merge-duplicates,return=representation",
-        },
-      );
-      res.status(200).json(mapBrandFileRow(rows[0]));
+      const brandFile = normalizeBrandFile(req.body);
+      const savedFile = await requestConvex("PUT", "/brand-files", brandFile, clientId);
+      res.status(200).json(savedFile);
       return;
     }
 
@@ -51,49 +39,36 @@ function getClientId(req) {
     .slice(0, 80);
 }
 
-function normalizeBrandFile(body, clientId) {
+function normalizeBrandFile(body) {
   const reportData = body?.reportData;
   const brand = String(body?.brand || reportData?.brand || "").trim();
-  const brandId = String(body?.id || slugify(brand)).trim();
+  const id = String(body?.id || slugify(brand)).trim();
 
-  if (!brand || !brandId || !reportData || typeof reportData !== "object") {
+  if (!brand || !id || !reportData || typeof reportData !== "object") {
     throw new Error("Expected brand, id, and reportData");
   }
 
   return {
-    client_id: clientId,
-    brand_id: brandId,
+    id,
     brand,
-    saved_at: new Date().toISOString(),
-    report_data: reportData,
+    reportData,
   };
 }
 
-function mapBrandFileRow(row) {
-  return {
-    id: row.brand_id,
-    brand: row.brand,
-    savedAt: row.saved_at,
-    reportData: row.report_data,
-  };
-}
-
-function requestSupabase(method, requestPath, body, headers = {}) {
-  const supabaseUrl = new URL(process.env.SUPABASE_URL);
+function requestConvex(method, requestPath, body, clientId) {
+  const convexUrl = new URL(getConvexHttpUrl());
   const requestBody = body === undefined ? null : JSON.stringify(body);
 
   return new Promise((resolve, reject) => {
     const request = https.request(
       {
         method,
-        hostname: supabaseUrl.hostname,
-        path: `/rest/v1${requestPath}`,
+        hostname: convexUrl.hostname,
+        path: requestPath,
         headers: {
-          apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
           "Content-Type": "application/json",
+          "X-Reseller-Client-Id": clientId,
           ...(requestBody ? { "Content-Length": Buffer.byteLength(requestBody) } : {}),
-          ...headers,
         },
       },
       (response) => {
@@ -107,13 +82,13 @@ function requestSupabase(method, requestPath, body, headers = {}) {
             try {
               parsed = JSON.parse(rawBody);
             } catch (error) {
-              reject(new Error(`Invalid database JSON response: ${rawBody.slice(0, 160)}`));
+              reject(new Error(`Invalid Convex JSON response: ${rawBody.slice(0, 160)}`));
               return;
             }
           }
 
           if (response.statusCode < 200 || response.statusCode >= 300) {
-            reject(new Error(parsed?.message || parsed?.error || `Database request failed with ${response.statusCode}`));
+            reject(new Error(parsed?.message || parsed?.error || `Convex request failed with ${response.statusCode}`));
             return;
           }
 
@@ -126,6 +101,12 @@ function requestSupabase(method, requestPath, body, headers = {}) {
     if (requestBody) request.write(requestBody);
     request.end();
   });
+}
+
+function getConvexHttpUrl() {
+  if (process.env.CONVEX_HTTP_URL) return process.env.CONVEX_HTTP_URL;
+  if (!process.env.CONVEX_URL) return "";
+  return process.env.CONVEX_URL.replace(".convex.cloud", ".convex.site");
 }
 
 function slugify(value) {

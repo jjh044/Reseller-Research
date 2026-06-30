@@ -35,8 +35,7 @@ Edit `.env` and add your keys:
 ```text
 RAPIDAPI_KEY=your-rapidapi-key
 OPENAI_API_KEY=your-openai-api-key
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+CONVEX_HTTP_URL=https://your-deployment.convex.site
 # Optional:
 # OPENAI_MODEL=gpt-4o-mini
 ```
@@ -58,13 +57,20 @@ Use **Download PDF** after generating a sheet. The browser print dialog will ope
 
 ## Brand File Database
 
-The Brand file syncs to Supabase when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are configured. If those values are missing, the app falls back to browser `localStorage` so saving still works during setup.
+The Brand file syncs to Convex when `CONVEX_HTTP_URL` is configured. If that value is missing, the app falls back to browser `localStorage` so saving still works during setup.
 
-1. Create a Supabase project.
-2. Run `supabase/brand-files.sql` in the Supabase SQL editor.
-3. Add these Vercel environment variables for Production and Preview:
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-4. Redeploy the Vercel project.
+1. Create or open a Convex project.
+2. From this app folder, install dependencies:
+   ```powershell
+   C:\Program Files\nodejs\npm.cmd install
+   ```
+3. Link and deploy the Convex backend:
+   ```powershell
+   C:\Program Files\nodejs\npx.cmd convex dev
+   C:\Program Files\nodejs\npx.cmd convex deploy
+   ```
+4. Copy the Convex HTTP actions URL, which should look like `https://your-deployment.convex.site`.
+5. Add `CONVEX_HTTP_URL` to the linked Vercel project for Production and Preview.
+6. Redeploy the Vercel project.
 
 Until user accounts are added, saved Brand files are tied to an anonymous browser client id stored on the device.

@@ -57,8 +57,7 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const data = await findCompletedItems(`${brand} clothing`);
-    const apiResults = getCategoriesForBrand(brand).map((category) => mapCategoryResponse(category, data));
+    const apiResults = await getCategoryResponses(brand);
 
     const categoriesWithData = apiResults.filter((category) => category.soldListings > 0);
     const categories = categoriesWithData.length > 0 ? categoriesWithData : apiResults;
@@ -116,6 +115,16 @@ function getCachedResponse(brand) {
 
 function getCategoriesForBrand(brand) {
   return categoryProfiles[normalizeBrand(brand)] || categoryProfiles.default;
+}
+
+async function getCategoryResponses(brand) {
+  const categories = getCategoriesForBrand(brand);
+  return Promise.all(
+    categories.map(async (category) => {
+      const data = await findCompletedItems(`${brand} ${category.query}`);
+      return mapCategoryResponse(category, data);
+    }),
+  );
 }
 
 function normalizeBrand(brand) {

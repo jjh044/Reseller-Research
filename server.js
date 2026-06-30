@@ -208,16 +208,25 @@ async function handleEbayAverageSellingPrice(url, res) {
     return;
   }
 
-  const data = await findCompletedItems(`${brand} clothing`);
-  const apiResults = getCategoriesForBrand(brand).map((category) => mapCategoryResponse(category, data));
+  const apiResults = await getCategoryResponses(brand);
 
   const categoriesWithData = apiResults.filter((category) => category.soldListings > 0);
+  const categories = categoriesWithData.length > 0 ? categoriesWithData : apiResults;
+  const sampleSize = categories.reduce((sum, category) => sum + category.soldListings, 0);
 
   const responseBody = {
     brand,
     generatedAt: new Date().toISOString(),
     source: "eBay Average Selling Price API",
-    categories: categoriesWithData.length > 0 ? categoriesWithData : apiResults,
+    dataMode: "live",
+    lookbackDays: boloLookbackDays,
+    sampleSize,
+    confidence: getDataConfidence(sampleSize, categories),
+    cache: {
+      status: "miss",
+      ttlHours: Math.round(cacheTtlMilliseconds / 1000 / 60 / 60),
+    },
+    categories,
   };
 
   ebayResponseCache.set(normalizeBrand(brand), {
@@ -240,6 +249,16 @@ function getCachedEbayResponse(brand) {
 
 function getCategoriesForBrand(brand) {
   return categoryProfiles[normalizeBrand(brand)] || categoryProfiles.default;
+}
+
+async function getCategoryResponses(brand) {
+  const categories = getCategoriesForBrand(brand);
+  return Promise.all(
+    categories.map(async (category) => {
+      const data = await findCompletedItems(`${brand} ${category.query}`);
+      return mapCategoryResponse(category, data);
+    }),
+  );
 }
 
 function normalizeBrand(brand) {
@@ -590,6 +609,29 @@ function estimateSellThroughRate(results, totalResults) {
   const returnedVolume = Math.min(results, 60) / 120;
   const marketDepth = Math.min(totalResults, 5000) / 50000;
   return clamp(0.34 + returnedVolume + marketDepth, 0.32, 0.86);
+}
+
+function getDataConfidence(sampleSize, categories) {
+  const categoriesWithComps = categories.filter((category) => category.soldListings > 0).length;
+  if (sampleSize >= 40 && categoriesWithComps >= 3) {
+    return {
+      level: "high",
+      sampleSize,
+      note: "Enough recent sold comps were found across multiple categories.",
+    };
+  }
+  if (sampleSize >= 12 && categoriesWithComps >= 2) {
+    return {
+      level: "medium",
+      sampleSize,
+      note: "Usable recent comps were found, but validate high-value buys manually.",
+    };
+  }
+  return {
+    level: "low",
+    sampleSize,
+    note: "Thin recent comp sample. Treat prices as directional, not precise.",
+  };
 }
 
 function average(values) {

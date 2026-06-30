@@ -349,7 +349,7 @@ function setLoading(isLoading) {
   }
 
   button.disabled = isLoading;
-  button.textContent = isLoading ? "Generating..." : "Generate sheet";
+  button.textContent = isLoading ? "Scanning..." : "Scan & generate";
   saveBrandFileButton.disabled = isLoading || !currentReportData;
   pdfButton.disabled = isLoading || !currentReportData;
   pdfStatus.textContent = isLoading

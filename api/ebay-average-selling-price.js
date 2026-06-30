@@ -135,11 +135,7 @@ function findCompletedItems(keywords) {
     {
       keywords,
       excluded_keywords: excludedKeywords,
-      max_search_results: "60",
-      category_id: "15724",
-      remove_outliers: "true",
-      site_id: "0",
-      aspects: [],
+      max_search_results: "200",
     },
     {
       "x-rapidapi-key": process.env.RAPIDAPI_KEY,

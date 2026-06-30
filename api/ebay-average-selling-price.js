@@ -49,7 +49,11 @@ module.exports = async function handler(req, res) {
 
     const cachedResponse = getCachedResponse(brand);
     if (cachedResponse) {
-      res.status(200).json(cachedResponse);
+      res.status(200).json({
+        ...cachedResponse,
+        source: "Cached eBay Average Selling Price API",
+        dataMode: "cached-live",
+      });
       return;
     }
 
@@ -57,12 +61,22 @@ module.exports = async function handler(req, res) {
     const apiResults = getCategoriesForBrand(brand).map((category) => mapCategoryResponse(category, data));
 
     const categoriesWithData = apiResults.filter((category) => category.soldListings > 0);
+    const categories = categoriesWithData.length > 0 ? categoriesWithData : apiResults;
+    const sampleSize = categories.reduce((sum, category) => sum + category.soldListings, 0);
 
     const responseBody = {
       brand,
       generatedAt: new Date().toISOString(),
       source: "eBay Average Selling Price API",
-      categories: categoriesWithData.length > 0 ? categoriesWithData : apiResults,
+      dataMode: "live",
+      lookbackDays,
+      sampleSize,
+      confidence: getDataConfidence(sampleSize, categories),
+      cache: {
+        status: "miss",
+        ttlHours: Math.round(cacheTtlMilliseconds / 1000 / 60 / 60),
+      },
+      categories,
     };
 
     responseCache.set(normalizeBrand(brand), {
@@ -71,6 +85,14 @@ module.exports = async function handler(req, res) {
     });
     res.status(200).json(responseBody);
   } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "marketplace_api_failure",
+        provider: "rapidapi-ebay-average-selling-price",
+        message: error.message,
+        at: new Date().toISOString(),
+      }),
+    );
     res.status(500).json({ error: "Server error", message: error.message });
   }
 };
@@ -83,7 +105,13 @@ function getCachedResponse(brand) {
     return null;
   }
 
-  return cached.responseBody;
+  return {
+    ...cached.responseBody,
+    cache: {
+      status: "hit",
+      ttlHours: Math.max(0, Math.round((cached.expiresAt - Date.now()) / 1000 / 60 / 60)),
+    },
+  };
 }
 
 function getCategoriesForBrand(brand) {
@@ -101,7 +129,7 @@ function normalizeBrand(brand) {
 }
 
 function findCompletedItems(keywords) {
-  return postJson(
+  return postJsonWithRetry(
     "ebay-average-selling-price.p.rapidapi.com",
     "/findCompletedItems",
     {
@@ -151,6 +179,52 @@ function mapCategoryResponse(category, data) {
         soldDate: product.date_sold || "Recent sale",
       })),
   };
+}
+
+async function postJsonWithRetry(hostname, requestPath, payload, headers) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return await postJson(hostname, requestPath, payload, headers);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableError(error) || attempt === 2) break;
+      await wait(350 * attempt);
+    }
+  }
+
+  throw lastError;
+}
+
+function isRetryableError(error) {
+  return /429|500|502|503|504|timeout|ECONNRESET|ETIMEDOUT/i.test(String(error.message || error));
+}
+
+function getDataConfidence(sampleSize, categories) {
+  const categoriesWithComps = categories.filter((category) => category.soldListings > 0).length;
+  if (sampleSize >= 40 && categoriesWithComps >= 3) {
+    return {
+      level: "high",
+      sampleSize,
+      note: "Enough recent sold comps were found across multiple categories.",
+    };
+  }
+  if (sampleSize >= 12 && categoriesWithComps >= 2) {
+    return {
+      level: "medium",
+      sampleSize,
+      note: "Usable recent comps were found, but validate high-value buys manually.",
+    };
+  }
+  return {
+    level: "low",
+    sampleSize,
+    note: "Thin recent comp sample. Treat prices as directional, not precise.",
+  };
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function postJson(hostname, requestPath, payload, headers) {

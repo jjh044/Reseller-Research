@@ -127,6 +127,22 @@ input {
   white-space: nowrap;
 }
 
+.feedback-link,
+.legal-links a,
+.legal-page a {
+  color: var(--green-dark);
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.legal-links {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .tab-button {
   min-height: 42px;
   border-radius: 6px;
@@ -641,6 +657,75 @@ dt {
   line-height: 1.55;
 }
 
+.trust-band,
+.sourcing-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.trust-band {
+  display: grid;
+  grid-template-columns: 0.8fr 1.3fr 1fr;
+  gap: 18px;
+  align-items: center;
+  padding: 18px;
+}
+
+.trust-band h3 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.trust-band dl {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.trust-band dd {
+  font-size: 1.05rem;
+  text-transform: capitalize;
+}
+
+.trust-band p {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.sourcing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sourcing-card {
+  display: grid;
+  gap: 10px;
+  min-height: 150px;
+  padding: 16px;
+}
+
+.sourcing-card span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.sourcing-card strong {
+  color: var(--green-dark);
+  font-size: 1.35rem;
+  line-height: 1.05;
+}
+
+.sourcing-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.38;
+}
+
 .section-heading {
   display: flex;
   align-items: end;
@@ -729,6 +814,59 @@ dd {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: white;
+}
+
+.history-section {
+  display: grid;
+}
+
+.history-list {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.history-item {
+  display: grid;
+  min-height: 56px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.history-item span,
+.history-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item small {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.legal-page {
+  display: grid;
+  gap: 18px;
+  width: min(760px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 42px 0;
+}
+
+.legal-page h1 {
+  margin: 8px 0 0;
+  white-space: normal;
+}
+
+.legal-page h2 {
+  margin-bottom: 8px;
+}
+
+.legal-page p {
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 table {
@@ -851,7 +989,8 @@ td:nth-child(4) {
 
   .input-row,
   .report-header,
-  .insight-band {
+  .insight-band,
+  .trust-band {
     grid-template-columns: 1fr;
   }
 
@@ -861,7 +1000,8 @@ td:nth-child(4) {
   }
 
   .kpi-grid,
-  .category-grid {
+  .category-grid,
+  .sourcing-grid {
     grid-template-columns: 1fr;
   }
 
@@ -897,6 +1037,10 @@ td:nth-child(4) {
     flex: 1 1 150px;
   }
 
+  .trust-band dl {
+    grid-template-columns: 1fr;
+  }
+
 }
 
 @media print {
@@ -917,6 +1061,7 @@ td:nth-child(4) {
   .search-panel,
   .app-tabs,
   .brand-file-panel,
+  .history-section,
   .sheet-actions,
   .loading-state {
     display: none !important;

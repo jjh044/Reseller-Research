@@ -61,6 +61,7 @@ const brandFileCount = document.querySelector("#brand-file-count");
 const brandFileEmpty = document.querySelector("#brand-file-empty");
 const brandFileList = document.querySelector("#brand-file-list");
 const brandFileStorageKey = "reseller-brand-file-v1";
+const searchHistoryStorageKey = "flipfile-search-history-v1";
 let currentReportData = null;
 let selectedLabelImage = null;
 let clerk = null;
@@ -161,7 +162,12 @@ async function generateReportForBrand(brand) {
   try {
     const marketplaceData = await fetchEbayAverageSellingPrice(brand);
     const aiInsights = await generateAiInsights(marketplaceData);
-    currentReportData = { ...marketplaceData, aiInsights };
+    currentReportData = {
+      ...marketplaceData,
+      aiInsights,
+      sourcing: buildSourcingGuidance(marketplaceData, aiInsights),
+    };
+    saveSearchHistory(currentReportData);
     renderReport(currentReportData);
   } catch (error) {
     console.error(error);
@@ -222,6 +228,14 @@ brandFileList.addEventListener("click", async (event) => {
     window.print();
     document.title = previousTitle;
   }
+});
+
+report.addEventListener("click", async (event) => {
+  const historyButton = event.target.closest("[data-history-brand]");
+  if (!historyButton) return;
+
+  input.value = historyButton.dataset.historyBrand;
+  await generateReportForBrand(historyButton.dataset.historyBrand);
 });
 
 showSignInButton.addEventListener("click", () => {
@@ -474,10 +488,14 @@ function serializeReportData(reportData) {
 }
 
 function reviveReportData(reportData) {
-  return {
+  const revived = {
     ...reportData,
     generatedAt: new Date(reportData.generatedAt),
   };
+  if (!revived.sourcing && Array.isArray(revived.categories)) {
+    revived.sourcing = buildSourcingGuidance(revived, revived.aiInsights || {});
+  }
+  return revived;
 }
 
 async function fetchEbayAverageSellingPrice(brand) {
@@ -582,8 +600,22 @@ async function fetchMockEbayAverageSellingPrice(brand, fallbackReason = "") {
     brand,
     generatedAt: new Date(),
     source: fallbackReason
-      ? `Local estimate - live eBay data unavailable: ${fallbackReason}`
-      : "Mock eBay Average Selling Price API",
+      ? `Estimated data - live eBay unavailable: ${fallbackReason}`
+      : "Estimated marketplace model",
+    dataMode: "estimated",
+    lookbackDays: 90,
+    sampleSize: categories.reduce((sum, category) => sum + category.soldListings, 0),
+    confidence: {
+      level: fallbackReason ? "low" : "medium",
+      sampleSize: categories.reduce((sum, category) => sum + category.soldListings, 0),
+      note: fallbackReason
+        ? "Live marketplace data was unavailable. Treat this report as directional."
+        : "Estimated model data. Validate buys with live sold comps before paying up.",
+    },
+    cache: {
+      status: "local-estimate",
+      ttlHours: 0,
+    },
     categories,
   };
 }
@@ -666,10 +698,32 @@ function renderReport(data) {
     </header>
 
     <section class="kpi-grid" aria-label="Brand summary metrics">
-      ${renderKpi("Blended ASP", formatCurrency(blendedAsp), "Average sold price across tracked clothing categories")}
+      ${renderKpi("Blended ASP", formatReportCurrency(blendedAsp, data), "Average sold price across tracked clothing categories")}
       ${renderKpi("Sell-through", formatPercent(blendedStr), "Sold listings divided by sold plus active listings")}
-      ${renderKpi("Sold comps", totalSold.toLocaleString(), "Mock completed listings in the analysis window")}
-      ${renderKpi("Active listings", totalActive.toLocaleString(), "Current mock supply visible in resale market")}
+      ${renderKpi("Sold comps", totalSold.toLocaleString(), "Completed listings in the analysis window")}
+      ${renderKpi("Active listings", totalActive.toLocaleString(), "Visible market supply in the analysis window")}
+    </section>
+
+    <section class="trust-band">
+      <div>
+        <p class="eyebrow">Data quality</p>
+        <h3>${escapeHtml(getDataModeLabel(data))}</h3>
+      </div>
+      <dl>
+        <div>
+          <dt>Confidence</dt>
+          <dd>${escapeHtml(data.confidence?.level || "unknown")}</dd>
+        </div>
+        <div>
+          <dt>Sample</dt>
+          <dd>${Number(data.confidence?.sampleSize || data.sampleSize || totalSold).toLocaleString()} comps</dd>
+        </div>
+        <div>
+          <dt>Cache</dt>
+          <dd>${escapeHtml(data.cache?.status || "none")}</dd>
+        </div>
+      </dl>
+      <p>${escapeHtml(data.confidence?.note || "Review sold comps manually before making high-cost buys.")}</p>
     </section>
 
     <section class="insight-band">
@@ -680,6 +734,13 @@ function renderReport(data) {
       <p>${escapeHtml(data.aiInsights.recommendation)}</p>
     </section>
 
+    <section class="sourcing-grid" aria-label="Sourcing recommendation">
+      ${renderSourcingCard("Buy/pass", data.sourcing?.decision || "Watch", data.sourcing?.decisionReason || "Review comps before buying.")}
+      ${renderSourcingCard("Max buy", formatCurrency(data.sourcing?.maxBuyPrice || 0), "Target buy cost after marketplace fees and margin buffer.")}
+      ${renderSourcingCard("Profit range", data.sourcing?.profitRange || "$0-$0", "Estimated net profit range after platform fees.")}
+      ${renderSourcingCard("Avoid", data.sourcing?.avoidNotes || "Avoid damaged, replica, stained, or overly common basics.", "Common sourcing risks for this brand.")}
+    </section>
+
     <section class="category-section">
       <div class="section-heading">
         <div>
@@ -687,7 +748,7 @@ function renderReport(data) {
         </div>
       </div>
       <div class="category-grid">
-        ${categoriesByAsp.map((category) => renderCategory(category, maxScore, data.aiInsights.strongestCategories)).join("")}
+        ${categoriesByAsp.map((category) => renderCategory(category, maxScore, data.aiInsights.strongestCategories, data)).join("")}
       </div>
     </section>
 
@@ -713,6 +774,8 @@ function renderReport(data) {
         </table>
       </div>
     </section>
+
+    ${renderSearchHistory()}
   `;
 }
 
@@ -742,7 +805,126 @@ function renderKpi(label, value, detail) {
   `;
 }
 
-function renderCategory(category, maxScore, strongestCategories) {
+function renderSourcingCard(label, value, detail) {
+  return `
+    <article class="sourcing-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <p>${escapeHtml(detail)}</p>
+    </article>
+  `;
+}
+
+function buildSourcingGuidance(marketplaceData) {
+  const { blendedAsp, blendedStr } = summarizeReportData(marketplaceData);
+  const feeRate = 0.15;
+  const shippingBuffer = 8;
+  const targetMargin = marketplaceData.confidence?.level === "low" ? 0.34 : 0.42;
+  const expectedNet = Math.max(0, blendedAsp * (1 - feeRate) - shippingBuffer);
+  const maxBuyPrice = Math.max(3, Math.floor(expectedNet * targetMargin));
+  const lowProfit = Math.max(0, Math.round(blendedAsp * 0.72 - maxBuyPrice - shippingBuffer));
+  const highProfit = Math.max(lowProfit + 4, Math.round(blendedAsp * 0.86 - maxBuyPrice - shippingBuffer));
+  const decisionScore = blendedAsp * blendedStr;
+  const decision =
+    marketplaceData.confidence?.level === "low"
+      ? "Watch"
+      : decisionScore >= 42
+        ? "Buy"
+        : decisionScore >= 28
+          ? "Selective buy"
+          : "Pass";
+  const strongest = [...marketplaceData.categories].sort(
+    (a, b) => b.averageSalePrice * b.sellThroughRate - a.averageSalePrice * a.sellThroughRate,
+  )[0];
+
+  return {
+    decision,
+    decisionReason:
+      decision === "Buy"
+        ? `${strongest.name} has the best price plus velocity signal.`
+        : decision === "Selective buy"
+          ? `Only buy stronger ${strongest.name.toLowerCase()} pieces below the max buy target.`
+          : decision === "Watch"
+            ? "Confidence is thin, so verify sold comps before sourcing."
+            : "Price or velocity is not strong enough for routine sourcing.",
+    maxBuyPrice,
+    profitRange: `${formatCurrency(lowProfit)}-${formatCurrency(highProfit)}`,
+    avoidNotes: getAvoidNotes(marketplaceData),
+  };
+}
+
+function getAvoidNotes(marketplaceData) {
+  const lowCategories = marketplaceData.categories
+    .filter((category) => category.sellThroughRate < 0.48 || category.averageSalePrice < 30)
+    .map((category) => category.name.toLowerCase())
+    .slice(0, 2);
+  const categoryNote = lowCategories.length ? `Be careful with ${lowCategories.join(" and ")}.` : "";
+  return `${categoryNote} Avoid damaged, replica, stained, altered, or high-supply basics.`.trim();
+}
+
+function getDataModeLabel(data) {
+  if (data.dataMode === "live") return "Live marketplace comps";
+  if (data.dataMode === "cached-live") return "Cached live comps";
+  if (data.dataMode === "estimated") return "Estimated fallback data";
+  return data.source || "Marketplace data";
+}
+
+function saveSearchHistory(reportData) {
+  const owner = clerk?.user?.id || "local";
+  const storageKey = `${searchHistoryStorageKey}:${owner}`;
+  const nextItem = {
+    brand: reportData.brand,
+    generatedAt: serializeReportData(reportData).generatedAt,
+    decision: reportData.sourcing?.decision || "Watch",
+    confidence: reportData.confidence?.level || "unknown",
+  };
+  const previous = getSearchHistory();
+  const next = [nextItem]
+    .concat(previous.filter((item) => item.brand.toLowerCase() !== nextItem.brand.toLowerCase()))
+    .slice(0, 8);
+  localStorage.setItem(storageKey, JSON.stringify(next));
+}
+
+function getSearchHistory() {
+  const owner = clerk?.user?.id || "local";
+  const storageKey = `${searchHistoryStorageKey}:${owner}`;
+  try {
+    const history = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    return Array.isArray(history) ? history : [];
+  } catch (error) {
+    console.warn("Could not read search history:", error);
+    return [];
+  }
+}
+
+function renderSearchHistory() {
+  const history = getSearchHistory();
+  if (history.length === 0) return "";
+
+  return `
+    <section class="history-section">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow section-title">Recent searches</p>
+        </div>
+      </div>
+      <div class="history-list">
+        ${history
+          .map(
+            (item) => `
+              <button type="button" class="history-item" data-history-brand="${escapeHtml(item.brand)}">
+                <span>${escapeHtml(item.brand)}</span>
+                <small>${escapeHtml(item.decision)} · ${escapeHtml(item.confidence)}</small>
+              </button>
+            `,
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderCategory(category, maxScore, strongestCategories, reportData) {
   const score = category.averageSalePrice * category.sellThroughRate;
   const strength = Math.round((score / maxScore) * 100);
   const isStrong = strongestCategories.some((strongCategory) => strongCategory.name === category.name);
@@ -758,7 +940,7 @@ function renderCategory(category, maxScore, strongestCategories) {
       <dl>
         <div>
           <dt>ASP</dt>
-          <dd>${formatCurrency(category.averageSalePrice)}</dd>
+          <dd>${formatReportCurrency(category.averageSalePrice, reportData)}</dd>
         </div>
         <div>
           <dt>STR</dt>
@@ -801,6 +983,12 @@ function formatCurrency(value) {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatReportCurrency(value, reportData) {
+  const shouldRound = reportData?.dataMode === "estimated" || reportData?.confidence?.level === "low";
+  const displayValue = shouldRound ? Math.round(Number(value || 0) / 5) * 5 : Number(value || 0);
+  return `${shouldRound ? "About " : ""}${formatCurrency(displayValue)}`;
 }
 
 function formatPercent(value) {

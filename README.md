@@ -1,6 +1,6 @@
-# Reseller Research AI
+# FlipFile
 
-A lightweight prototype for one-page brand intelligence sheets for clothing resellers.
+A sourcing intelligence app for clothing resellers.
 
 ## Current Flow
 
@@ -9,8 +9,8 @@ A lightweight prototype for one-page brand intelligence sheets for clothing rese
 3. The detected or entered brand is sent to RapidAPI's eBay Average Selling Price endpoint.
 4. If the eBay API is unavailable or quota-limited, the app falls back to a local estimate.
 5. The local Node proxy sends the normalized marketplace data to OpenAI for an AI readout.
-6. The page renders ASP, sell-through rate, strong categories, and highest sold items.
-7. User exports the generated cheat sheet through the PDF-ready print flow.
+6. The page renders ASP, sell-through rate, data confidence, strongest categories, buy/pass guidance, max buy target, profit range, and highest sold items.
+7. User saves the Brand file to their account or exports the generated cheat sheet through the PDF-ready print flow.
 
 ## Future API Integration Points
 
@@ -36,6 +36,8 @@ Edit `.env` and add your keys:
 RAPIDAPI_KEY=your-rapidapi-key
 OPENAI_API_KEY=your-openai-api-key
 CONVEX_HTTP_URL=https://your-deployment.convex.site
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_your-clerk-publishable-key
+CLERK_SECRET_KEY=sk_test_your-clerk-secret-key
 # Optional:
 # OPENAI_MODEL=gpt-4o-mini
 ```
@@ -85,3 +87,15 @@ Configure these Vercel environment variables for Production and Preview:
 - `CLERK_SECRET_KEY`
 
 In Clerk, enable Email address sign-up/sign-in and password authentication. Clerk handles forgot-password emails and the user menu/logout flow.
+
+## Launch Features
+
+- Live, cached-live, and estimated data labels.
+- Confidence and sample-size notes on every report.
+- Retry handling and structured server logs for marketplace API failures.
+- Buy/pass recommendation, max buy price, profit range, and avoid notes.
+- Recent search history on the report screen.
+- Account-synced saved Brand files.
+- Mobile-first label scanner with separate camera and upload actions.
+- Public `privacy.html` and `terms.html` pages.
+- Feedback links to `creativesolutionssupport@gmail.com`.

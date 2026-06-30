@@ -1,4 +1,5 @@
 .env
+.env*.local
 .server.pid
 .server.stderr.log
 .server.stdout.log

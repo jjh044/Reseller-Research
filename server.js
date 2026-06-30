@@ -253,12 +253,13 @@ function getCategoriesForBrand(brand) {
 
 async function getCategoryResponses(brand) {
   const categories = getCategoriesForBrand(brand);
-  return Promise.all(
-    categories.map(async (category) => {
-      const data = await findCompletedItems(`${brand} ${category.query}`);
-      return mapCategoryResponse(category, data);
-    }),
-  );
+  const responses = [];
+  for (const category of categories) {
+    const data = await findCompletedItems(`${brand} ${category.query}`);
+    responses.push(mapCategoryResponse(category, data));
+    await wait(250);
+  }
+  return responses;
 }
 
 function normalizeBrand(brand) {
@@ -632,6 +633,10 @@ function getDataConfidence(sampleSize, categories) {
     sampleSize,
     note: "Thin recent comp sample. Treat prices as directional, not precise.",
   };
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function average(values) {

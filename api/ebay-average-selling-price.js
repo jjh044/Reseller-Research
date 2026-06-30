@@ -119,12 +119,13 @@ function getCategoriesForBrand(brand) {
 
 async function getCategoryResponses(brand) {
   const categories = getCategoriesForBrand(brand);
-  return Promise.all(
-    categories.map(async (category) => {
-      const data = await findCompletedItems(`${brand} ${category.query}`);
-      return mapCategoryResponse(category, data);
-    }),
-  );
+  const responses = [];
+  for (const category of categories) {
+    const data = await findCompletedItems(`${brand} ${category.query}`);
+    responses.push(mapCategoryResponse(category, data));
+    await wait(250);
+  }
+  return responses;
 }
 
 function normalizeBrand(brand) {
@@ -202,7 +203,7 @@ async function postJsonWithRetry(hostname, requestPath, payload, headers) {
 }
 
 function isRetryableError(error) {
-  return /429|500|502|503|504|timeout|ECONNRESET|ETIMEDOUT/i.test(String(error.message || error));
+  return /500|502|503|504|timeout|ECONNRESET|ETIMEDOUT/i.test(String(error.message || error));
 }
 
 function getDataConfidence(sampleSize, categories) {

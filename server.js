@@ -2,6 +2,7 @@ const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
+const brandFilesHandler = require("./api/brand-files");
 
 loadLocalEnv();
 
@@ -61,6 +62,11 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/identify-label") {
       await handleIdentifyLabel(req, res);
+      return;
+    }
+
+    if (url.pathname === "/api/brand-files") {
+      await handleBrandFiles(req, res);
       return;
     }
 
@@ -147,6 +153,23 @@ async function handleIdentifyLabel(req, res) {
   }
 
   sendJson(res, 200, normalized);
+}
+
+async function handleBrandFiles(req, res) {
+  const serverlessReq = req;
+  if (req.method === "PUT" || req.method === "POST") {
+    serverlessReq.body = await readJsonRequest(req);
+  }
+
+  await brandFilesHandler(serverlessReq, {
+    status(statusCode) {
+      return {
+        json(body) {
+          sendJson(res, statusCode, body);
+        },
+      };
+    },
+  });
 }
 
 async function handleEbayAverageSellingPrice(url, res) {

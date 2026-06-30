@@ -52,6 +52,7 @@ const brandFileCount = document.querySelector("#brand-file-count");
 const brandFileEmpty = document.querySelector("#brand-file-empty");
 const brandFileList = document.querySelector("#brand-file-list");
 const brandFileStorageKey = "reseller-brand-file-v1";
+const brandFileClientStorageKey = "reseller-brand-client-id-v1";
 let currentReportData = null;
 let selectedLabelImage = null;
 
@@ -167,16 +168,16 @@ async function generateReportForBrand(brand) {
 saveBrandFileButton.addEventListener("click", () => {
   if (!currentReportData) return;
 
-  saveBrandFile(currentReportData);
-  renderBrandFile();
-  pdfStatus.textContent = `${currentReportData.brand} was added to Brand file.`;
+  saveBrandFile(currentReportData).then(() => {
+    renderBrandFile();
+    pdfStatus.textContent = `${currentReportData.brand} was added to Brand file.`;
+  });
 });
 
 pdfButton.addEventListener("click", () => {
   if (!currentReportData) return;
 
-  saveBrandFile(currentReportData);
-  renderBrandFile();
+  saveBrandFile(currentReportData).then(renderBrandFile);
 
   const previousTitle = document.title;
   document.title = `${slugify(currentReportData.brand)}-reseller-brand-intelligence`;
@@ -184,11 +185,11 @@ pdfButton.addEventListener("click", () => {
   document.title = previousTitle;
 });
 
-brandFileList.addEventListener("click", (event) => {
+brandFileList.addEventListener("click", async (event) => {
   const actionButton = event.target.closest("[data-brand-file-action]");
   if (!actionButton) return;
 
-  const brandFile = getBrandFiles().find((item) => item.id === actionButton.dataset.brandFileId);
+  const brandFile = (await getBrandFiles()).find((item) => item.id === actionButton.dataset.brandFileId);
   if (!brandFile) return;
 
   currentReportData = reviveReportData(brandFile.reportData);
@@ -235,8 +236,7 @@ function activateTab(tabName) {
   });
 }
 
-function saveBrandFile(reportData) {
-  const savedFiles = getBrandFiles();
+async function saveBrandFile(reportData) {
   const id = normalizeBrandFileId(reportData.brand);
   const savedFile = {
     id,
@@ -244,12 +244,55 @@ function saveBrandFile(reportData) {
     savedAt: new Date().toISOString(),
     reportData: serializeReportData(reportData),
   };
-  const nextFiles = savedFiles.filter((item) => item.id !== id).concat(savedFile);
 
+  try {
+    const response = await fetch("/api/brand-files", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Reseller-Client-Id": getBrandFileClientId(),
+      },
+      body: JSON.stringify(savedFile),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, "Could not save Brand file to database."));
+    }
+
+    return response.json();
+  } catch (error) {
+    console.warn("Saving Brand file locally:", error);
+    saveLocalBrandFile(savedFile);
+    return savedFile;
+  }
+}
+
+async function getBrandFiles() {
+  try {
+    const response = await fetch("/api/brand-files", {
+      headers: {
+        "X-Reseller-Client-Id": getBrandFileClientId(),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, "Could not load Brand file database."));
+    }
+
+    return response.json();
+  } catch (error) {
+    console.warn("Loading Brand file locally:", error);
+    return getLocalBrandFiles();
+  }
+}
+
+function saveLocalBrandFile(savedFile) {
+  const savedFiles = getLocalBrandFiles();
+  const nextFiles = savedFiles.filter((item) => item.id !== savedFile.id).concat(savedFile);
   localStorage.setItem(brandFileStorageKey, JSON.stringify(nextFiles));
 }
 
-function getBrandFiles() {
+function getLocalBrandFiles() {
   try {
     const files = JSON.parse(localStorage.getItem(brandFileStorageKey) || "[]");
     return Array.isArray(files) ? files : [];
@@ -259,8 +302,8 @@ function getBrandFiles() {
   }
 }
 
-function renderBrandFile() {
-  const savedFiles = getBrandFiles().sort((a, b) => a.brand.localeCompare(b.brand));
+async function renderBrandFile() {
+  const savedFiles = (await getBrandFiles()).sort((a, b) => a.brand.localeCompare(b.brand));
   brandFileCount.textContent = `${savedFiles.length} saved ${savedFiles.length === 1 ? "sheet" : "sheets"}`;
   brandFileEmpty.hidden = savedFiles.length > 0;
 
@@ -284,6 +327,19 @@ function renderBrandFile() {
       `,
     )
     .join("");
+}
+
+function getBrandFileClientId() {
+  const savedClientId = localStorage.getItem(brandFileClientStorageKey);
+  if (savedClientId) return savedClientId;
+
+  const clientId =
+    typeof window.crypto?.randomUUID === "function"
+      ? window.crypto.randomUUID()
+      : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  localStorage.setItem(brandFileClientStorageKey, clientId);
+  return clientId;
 }
 
 function serializeReportData(reportData) {

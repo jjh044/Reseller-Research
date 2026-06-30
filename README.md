@@ -35,6 +35,8 @@ Edit `.env` and add your keys:
 ```text
 RAPIDAPI_KEY=your-rapidapi-key
 OPENAI_API_KEY=your-openai-api-key
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 # Optional:
 # OPENAI_MODEL=gpt-4o-mini
 ```
@@ -53,3 +55,16 @@ Open `http://localhost:3000`.
 Opening `index.html` directly still works, but it uses mock fallback data because browser JavaScript should not contain API keys.
 
 Use **Download PDF** after generating a sheet. The browser print dialog will open with print-specific styling for saving the brand sheet as a PDF.
+
+## Brand File Database
+
+The Brand file syncs to Supabase when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are configured. If those values are missing, the app falls back to browser `localStorage` so saving still works during setup.
+
+1. Create a Supabase project.
+2. Run `supabase/brand-files.sql` in the Supabase SQL editor.
+3. Add these Vercel environment variables for Production and Preview:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+4. Redeploy the Vercel project.
+
+Until user accounts are added, saved Brand files are tied to an anonymous browser client id stored on the device.

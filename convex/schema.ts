@@ -11,4 +11,11 @@ export default defineSchema({
   })
     .index("by_client_brand", ["clientId", "brand"])
     .index("by_client_brand_id", ["clientId", "brandId"]),
+  marketplaceCache: defineTable({
+    cacheKey: v.string(),
+    brand: v.string(),
+    generatedAt: v.string(),
+    expiresAt: v.string(),
+    responseData: v.any(),
+  }).index("by_cache_key", ["cacheKey"]),
 });

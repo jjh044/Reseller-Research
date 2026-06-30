@@ -45,6 +45,7 @@ const boloLookbackDays = 90;
 const minimumResalePrice = 5;
 const maximumResalePrice = 500;
 const cacheTtlMilliseconds = 1000 * 60 * 60 * 6;
+const persistentCacheTtlMilliseconds = 1000 * 60 * 60 * 24;
 const ebayResponseCache = new Map();
 
 const server = http.createServer(async (req, res) => {
@@ -208,32 +209,49 @@ async function handleEbayAverageSellingPrice(url, res) {
     return;
   }
 
-  const apiResults = await getCategoryResponses(brand);
+  const cacheKey = getMarketplaceCacheKey(brand);
+  const persistentCache = await getPersistentMarketplaceCache(cacheKey);
+  if (persistentCache && new Date(persistentCache.expiresAt).getTime() > Date.now()) {
+    sendJson(res, 200, markCachedResponse(persistentCache.responseData, "persistent-cache", persistentCache));
+    return;
+  }
 
-  const categoriesWithData = apiResults.filter((category) => category.soldListings > 0);
-  const categories = categoriesWithData.length > 0 ? categoriesWithData : apiResults;
-  const sampleSize = categories.reduce((sum, category) => sum + category.soldListings, 0);
+  try {
+    const apiResults = await getCategoryResponses(brand);
 
-  const responseBody = {
-    brand,
-    generatedAt: new Date().toISOString(),
-    source: "eBay Average Selling Price API",
-    dataMode: "live",
-    lookbackDays: boloLookbackDays,
-    sampleSize,
-    confidence: getDataConfidence(sampleSize, categories),
-    cache: {
-      status: "miss",
-      ttlHours: Math.round(cacheTtlMilliseconds / 1000 / 60 / 60),
-    },
-    categories,
-  };
+    const categoriesWithData = apiResults.filter((category) => category.soldListings > 0);
+    const categories = categoriesWithData.length > 0 ? categoriesWithData : apiResults;
+    const sampleSize = categories.reduce((sum, category) => sum + category.soldListings, 0);
 
-  ebayResponseCache.set(normalizeBrand(brand), {
-    expiresAt: Date.now() + cacheTtlMilliseconds,
-    responseBody,
-  });
-  sendJson(res, 200, responseBody);
+    const responseBody = {
+      brand,
+      generatedAt: new Date().toISOString(),
+      source: "eBay Average Selling Price API",
+      dataMode: "live",
+      lookbackDays: boloLookbackDays,
+      sampleSize,
+      confidence: getDataConfidence(sampleSize, categories),
+      cache: {
+        status: "miss",
+        ttlHours: Math.round(cacheTtlMilliseconds / 1000 / 60 / 60),
+      },
+      categories,
+    };
+
+    ebayResponseCache.set(normalizeBrand(brand), {
+      expiresAt: Date.now() + cacheTtlMilliseconds,
+      responseBody,
+    });
+    await savePersistentMarketplaceCache(cacheKey, brand, responseBody);
+    sendJson(res, 200, responseBody);
+  } catch (error) {
+    const staleCache = persistentCache || (await getPersistentMarketplaceCache(cacheKey));
+    if (staleCache) {
+      sendJson(res, 200, markCachedResponse(staleCache.responseData, "stale-cache", staleCache, error.message));
+      return;
+    }
+    throw error;
+  }
 }
 
 function getCachedEbayResponse(brand) {
@@ -245,6 +263,106 @@ function getCachedEbayResponse(brand) {
   }
 
   return cached.responseBody;
+}
+
+function getMarketplaceCacheKey(brand) {
+  return `marketplace:v1:${normalizeBrand(brand)}:${boloLookbackDays}`;
+}
+
+function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
+  return {
+    ...responseData,
+    source: status === "stale-cache" ? "Stale cached eBay comps" : "Cached eBay comps",
+    dataMode: status === "stale-cache" ? "stale-cache" : "cached-live",
+    cache: {
+      status,
+      generatedAt: cacheRecord.generatedAt,
+      expiresAt: cacheRecord.expiresAt,
+      refreshError,
+    },
+  };
+}
+
+async function getPersistentMarketplaceCache(cacheKey) {
+  if (!getConvexHttpUrl() || !cacheKey) return null;
+
+  try {
+    return await requestConvex("GET", `/marketplace-cache?key=${encodeURIComponent(cacheKey)}`);
+  } catch (error) {
+    console.warn("Could not read marketplace cache:", error.message);
+    return null;
+  }
+}
+
+async function savePersistentMarketplaceCache(cacheKey, brand, responseData) {
+  if (!getConvexHttpUrl()) return;
+
+  const generatedAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + persistentCacheTtlMilliseconds).toISOString();
+  try {
+    await requestConvex("PUT", "/marketplace-cache", {
+      cacheKey,
+      brand,
+      generatedAt,
+      expiresAt,
+      responseData,
+    });
+  } catch (error) {
+    console.warn("Could not save marketplace cache:", error.message);
+  }
+}
+
+function requestConvex(method, requestPath, body) {
+  const convexUrl = new URL(getConvexHttpUrl());
+  const requestBody = body === undefined ? null : JSON.stringify(body);
+
+  return new Promise((resolve, reject) => {
+    const request = https.request(
+      {
+        method,
+        hostname: convexUrl.hostname,
+        path: requestPath,
+        headers: {
+          "Content-Type": "application/json",
+          ...(requestBody ? { "Content-Length": Buffer.byteLength(requestBody) } : {}),
+        },
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const rawBody = Buffer.concat(chunks).toString();
+          let parsed = null;
+
+          if (rawBody) {
+            try {
+              parsed = JSON.parse(rawBody);
+            } catch (error) {
+              reject(new Error(`Invalid Convex JSON response: ${rawBody.slice(0, 160)}`));
+              return;
+            }
+          }
+
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            reject(new Error(parsed?.message || parsed?.error || `Convex request failed with ${response.statusCode}`));
+            return;
+          }
+
+          resolve(parsed);
+        });
+      },
+    );
+
+    request.on("error", reject);
+    if (requestBody) request.write(requestBody);
+    request.end();
+  });
+}
+
+function getConvexHttpUrl() {
+  if (process.env.CONVEX_HTTP_URL) return process.env.CONVEX_HTTP_URL;
+  if (!process.env.CONVEX_URL) return "";
+  return process.env.CONVEX_URL.replace(".convex.cloud", ".convex.site");
 }
 
 function getCategoriesForBrand(brand) {

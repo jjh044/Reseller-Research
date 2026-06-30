@@ -32,6 +32,7 @@ const lookbackDays = 90;
 const minimumResalePrice = 5;
 const maximumResalePrice = 500;
 const cacheTtlMilliseconds = 1000 * 60 * 60 * 6;
+const persistentCacheTtlMilliseconds = 1000 * 60 * 60 * 24;
 const responseCache = new Map();
 
 module.exports = async function handler(req, res) {
@@ -54,6 +55,13 @@ module.exports = async function handler(req, res) {
         source: "Cached eBay Average Selling Price API",
         dataMode: "cached-live",
       });
+      return;
+    }
+
+    const cacheKey = getMarketplaceCacheKey(brand);
+    const persistentCache = await getPersistentMarketplaceCache(cacheKey);
+    if (persistentCache && new Date(persistentCache.expiresAt).getTime() > Date.now()) {
+      res.status(200).json(markCachedResponse(persistentCache.responseData, "persistent-cache", persistentCache));
       return;
     }
 
@@ -82,6 +90,7 @@ module.exports = async function handler(req, res) {
       expiresAt: Date.now() + cacheTtlMilliseconds,
       responseBody,
     });
+    await savePersistentMarketplaceCache(cacheKey, brand, responseBody);
     res.status(200).json(responseBody);
   } catch (error) {
     console.error(
@@ -92,6 +101,11 @@ module.exports = async function handler(req, res) {
         at: new Date().toISOString(),
       }),
     );
+    const staleCache = await getPersistentMarketplaceCache(getMarketplaceCacheKey(req.query.brand || ""));
+    if (staleCache) {
+      res.status(200).json(markCachedResponse(staleCache.responseData, "stale-cache", staleCache, error.message));
+      return;
+    }
     res.status(500).json({ error: "Server error", message: error.message });
   }
 };
@@ -136,6 +150,106 @@ function normalizeBrand(brand) {
     .replace(/\s+/g, " ");
   if (normalized === "levi" || normalized === "levis" || normalized === "levi s") return "levis";
   return normalized;
+}
+
+function getMarketplaceCacheKey(brand) {
+  return `marketplace:v1:${normalizeBrand(brand)}:${lookbackDays}`;
+}
+
+function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
+  return {
+    ...responseData,
+    source: status === "stale-cache" ? "Stale cached eBay comps" : "Cached eBay comps",
+    dataMode: status === "stale-cache" ? "stale-cache" : "cached-live",
+    cache: {
+      status,
+      generatedAt: cacheRecord.generatedAt,
+      expiresAt: cacheRecord.expiresAt,
+      refreshError,
+    },
+  };
+}
+
+async function getPersistentMarketplaceCache(cacheKey) {
+  if (!getConvexHttpUrl() || !cacheKey) return null;
+
+  try {
+    return await requestConvex("GET", `/marketplace-cache?key=${encodeURIComponent(cacheKey)}`);
+  } catch (error) {
+    console.warn("Could not read marketplace cache:", error.message);
+    return null;
+  }
+}
+
+async function savePersistentMarketplaceCache(cacheKey, brand, responseData) {
+  if (!getConvexHttpUrl()) return;
+
+  const generatedAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + persistentCacheTtlMilliseconds).toISOString();
+  try {
+    await requestConvex("PUT", "/marketplace-cache", {
+      cacheKey,
+      brand,
+      generatedAt,
+      expiresAt,
+      responseData,
+    });
+  } catch (error) {
+    console.warn("Could not save marketplace cache:", error.message);
+  }
+}
+
+function requestConvex(method, requestPath, body) {
+  const convexUrl = new URL(getConvexHttpUrl());
+  const requestBody = body === undefined ? null : JSON.stringify(body);
+
+  return new Promise((resolve, reject) => {
+    const request = https.request(
+      {
+        method,
+        hostname: convexUrl.hostname,
+        path: requestPath,
+        headers: {
+          "Content-Type": "application/json",
+          ...(requestBody ? { "Content-Length": Buffer.byteLength(requestBody) } : {}),
+        },
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const rawBody = Buffer.concat(chunks).toString();
+          let parsed = null;
+
+          if (rawBody) {
+            try {
+              parsed = JSON.parse(rawBody);
+            } catch (error) {
+              reject(new Error(`Invalid Convex JSON response: ${rawBody.slice(0, 160)}`));
+              return;
+            }
+          }
+
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            reject(new Error(parsed?.message || parsed?.error || `Convex request failed with ${response.statusCode}`));
+            return;
+          }
+
+          resolve(parsed);
+        });
+      },
+    );
+
+    request.on("error", reject);
+    if (requestBody) request.write(requestBody);
+    request.end();
+  });
+}
+
+function getConvexHttpUrl() {
+  if (process.env.CONVEX_HTTP_URL) return process.env.CONVEX_HTTP_URL;
+  if (!process.env.CONVEX_URL) return "";
+  return process.env.CONVEX_URL.replace(".convex.cloud", ".convex.site");
 }
 
 function findCompletedItems(keywords) {

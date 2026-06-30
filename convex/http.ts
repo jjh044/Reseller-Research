@@ -11,6 +11,12 @@ http.route({
 });
 
 http.route({
+  path: "/marketplace-cache",
+  method: "OPTIONS",
+  handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders() })),
+});
+
+http.route({
   path: "/brand-files",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
@@ -19,6 +25,44 @@ http.route({
 
     const files = await ctx.runQuery(api.brandFiles.list, { clientId });
     return json(files);
+  }),
+});
+
+http.route({
+  path: "/marketplace-cache",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const cacheKey = new URL(request.url).searchParams.get("key") || "";
+    if (!cacheKey) return json({ error: "Missing cache key" }, 400);
+
+    const cached = await ctx.runQuery(api.marketplaceCache.get, { cacheKey });
+    return json(cached);
+  }),
+});
+
+http.route({
+  path: "/marketplace-cache",
+  method: "PUT",
+  handler: httpAction(async (ctx, request) => {
+    const body = await request.json();
+    const cacheKey = String(body?.cacheKey || "").trim();
+    const brand = String(body?.brand || "").trim();
+    const generatedAt = String(body?.generatedAt || "").trim();
+    const expiresAt = String(body?.expiresAt || "").trim();
+    const responseData = body?.responseData;
+
+    if (!cacheKey || !brand || !generatedAt || !expiresAt || !responseData) {
+      return json({ error: "Expected cacheKey, brand, generatedAt, expiresAt, and responseData" }, 400);
+    }
+
+    const saved = await ctx.runMutation(api.marketplaceCache.save, {
+      cacheKey,
+      brand,
+      generatedAt,
+      expiresAt,
+      responseData,
+    });
+    return json(saved);
   }),
 });
 

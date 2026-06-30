@@ -7,7 +7,7 @@ A sourcing intelligence app for clothing resellers.
 1. User enters a clothing brand or uploads/snaps a clothing label photo.
 2. Label photos are sent to the local Node proxy, which uses OpenAI vision to identify the brand.
 3. The detected or entered brand is sent to RapidAPI's eBay Average Selling Price endpoint.
-4. If the eBay API is unavailable or quota-limited, the app falls back to a local estimate.
+4. Successful eBay comp results are cached in Convex for repeat searches and stale fallback.
 5. The local Node proxy sends the normalized marketplace data to OpenAI for an AI readout.
 6. The page renders ASP, sell-through rate, data confidence, strongest categories, buy/pass guidance, max buy target, profit range, and highest sold items.
 7. User saves the Brand file to their account or exports the generated cheat sheet through the PDF-ready print flow.
@@ -57,9 +57,10 @@ Opening `index.html` directly still works, but it uses mock fallback data becaus
 
 Use **Download PDF** after generating a sheet. The browser print dialog will open with print-specific styling for saving the brand sheet as a PDF.
 
-## Brand File Database
+## Convex Storage
 
 The Brand file syncs to Convex when `CONVEX_HTTP_URL` is configured. If that value is missing, the app falls back to browser `localStorage` so saving still works during setup.
+Marketplace comp responses also cache in Convex for 24 hours per brand. If RapidAPI or eBay is temporarily blocked and a previous cache record exists, the app can return the stale cached result with a clear `stale-cache` data label instead of pretending the data is fresh.
 
 1. Create or open a Convex project.
 2. From this app folder, install dependencies:

@@ -10,6 +10,7 @@
 
 import type * as brandFiles from "../brandFiles.js";
 import type * as http from "../http.js";
+import type * as marketplaceCache from "../marketplaceCache.js";
 
 import type {
   ApiFromModules,
@@ -20,6 +21,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   brandFiles: typeof brandFiles;
   http: typeof http;
+  marketplaceCache: typeof marketplaceCache;
 }>;
 
 /**

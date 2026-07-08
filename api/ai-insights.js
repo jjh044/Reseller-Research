@@ -57,7 +57,7 @@ function generateOpenAiInsights(marketplaceData) {
           role: "user",
           content: JSON.stringify({
             task:
-              "Create a reseller intelligence readout. Choose the one or two strongest categories from the supplied category names only. Mention ASP, velocity, and BOLO logic where relevant.",
+              "Create a reseller intelligence readout. Choose the one or two strongest categories from the supplied category names only. Use ASP and sold-comp depth; do not claim sell-through or active-listing velocity.",
             marketplaceData,
           }),
         },

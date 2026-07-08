@@ -44,6 +44,19 @@ const excludedKeywords = "damaged fake replica lot read stains broken parts only
 const boloLookbackDays = 90;
 const minimumResalePrice = 5;
 const maximumResalePrice = 500;
+const minimumCategoryComps = 2;
+const marketplaceCategories = [
+  { name: "Jeans", keywords: ["jeans", "denim pants"] },
+  { name: "Jackets", keywords: ["jacket", "jackets", "coat", "coats", "parka", "blazer", "vest"] },
+  { name: "Shirts", keywords: ["shirt", "shirts", "t shirt", "tee", "polo", "blouse", "top", "tops"] },
+  { name: "Pants", keywords: ["pants", "trousers", "chinos", "joggers", "leggings"] },
+  { name: "Dresses", keywords: ["dress", "dresses", "gown"] },
+  { name: "Sweaters", keywords: ["sweater", "sweaters", "cardigan", "pullover", "fleece"] },
+  { name: "Skirts", keywords: ["skirt", "skirts"] },
+  { name: "Shorts", keywords: ["shorts", "cutoffs"] },
+  { name: "Shoes", keywords: ["shoes", "sneakers", "boots", "sandals", "heels", "loafers"] },
+  { name: "Bags", keywords: ["bag", "bags", "purse", "handbag", "backpack", "tote"] },
+];
 const cacheTtlMilliseconds = 1000 * 60 * 60 * 6;
 const persistentCacheTtlMilliseconds = 1000 * 60 * 60 * 24;
 const ebayResponseCache = new Map();
@@ -88,22 +101,24 @@ server.listen(PORT, () => {
 });
 
 function loadLocalEnv() {
-  const envPath = path.join(__dirname, ".env");
-  if (!fs.existsSync(envPath)) return;
+  for (const filename of [".env.local", ".env"]) {
+    const envPath = path.join(__dirname, filename);
+    if (!fs.existsSync(envPath)) continue;
 
-  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
+    const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
 
-    const separatorIndex = trimmed.indexOf("=");
-    if (separatorIndex === -1) continue;
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex === -1) continue;
 
-    const key = trimmed.slice(0, separatorIndex).trim();
-    const rawValue = trimmed.slice(separatorIndex + 1).trim();
-    if (!key || process.env[key] !== undefined) continue;
+      const key = trimmed.slice(0, separatorIndex).trim();
+      const rawValue = trimmed.slice(separatorIndex + 1).trim();
+      if (!key || String(process.env[key] || "").trim()) continue;
 
-    process.env[key] = rawValue.replace(/^["']|["']$/g, "");
+      process.env[key] = rawValue.replace(/^["']|["']$/g, "");
+    }
   }
 }
 
@@ -134,11 +149,6 @@ async function handleIdentifyLabel(req, res) {
     return;
   }
 
-  if (!OPENAI_API_KEY) {
-    sendJson(res, 500, { error: "Missing OPENAI_API_KEY environment variable" });
-    return;
-  }
-
   const requestBody = await readJsonRequest(req, 7 * 1024 * 1024);
   const image = String(requestBody.image || "");
 
@@ -147,13 +157,24 @@ async function handleIdentifyLabel(req, res) {
     return;
   }
 
+  if (!OPENAI_API_KEY) {
+    const remote = await postJsonResponse(
+      "reseller-research.vercel.app",
+      "/api/identify-label",
+      { image },
+      { "Content-Type": "application/json" },
+    );
+    sendJson(res, remote.statusCode, remote.body);
+    return;
+  }
+
   const labelResult = await identifyLabelBrand(image);
   const normalized = normalizeLabelResult(labelResult);
 
-  if (!normalized.brand || normalized.confidence < 0.35) {
+  if (!normalized.brand || normalized.confidence < 0.2) {
     sendJson(res, 422, {
       error: "Could not confidently identify a brand label",
-      message: "Try a sharper, closer photo with the full label text visible.",
+      message: "No readable brand name was found. Try another angle with the label in view.",
       ...normalized,
     });
     return;
@@ -219,8 +240,14 @@ async function handleEbayAverageSellingPrice(url, res) {
   try {
     const apiResults = await getCategoryResponses(brand);
 
-    const categoriesWithData = apiResults.filter((category) => category.soldListings > 0);
-    const categories = categoriesWithData.length > 0 ? categoriesWithData : apiResults;
+    const categories = apiResults.filter((category) => category.soldListings >= minimumCategoryComps);
+    if (categories.length === 0) {
+      sendJson(res, 404, {
+        error: "No verified category comps found",
+        message: `No categories had at least ${minimumCategoryComps} recent sold listings for ${brand}.`,
+      });
+      return;
+    }
     const sampleSize = categories.reduce((sum, category) => sum + category.soldListings, 0);
 
     const responseBody = {
@@ -266,7 +293,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v1:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v2:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -366,18 +393,13 @@ function getConvexHttpUrl() {
 }
 
 function getCategoriesForBrand(brand) {
-  return categoryProfiles[normalizeBrand(brand)] || categoryProfiles.default;
+  return marketplaceCategories;
 }
 
 async function getCategoryResponses(brand) {
   const categories = getCategoriesForBrand(brand);
-  const responses = [];
-  for (const category of categories) {
-    const data = await findCompletedItems(`${brand} ${category.query}`);
-    responses.push(mapCategoryResponse(category, data));
-    await wait(250);
-  }
-  return responses;
+  const data = await findCompletedItems(brand);
+  return categories.map((category) => mapCategoryResponse(brand, category, data));
 }
 
 function normalizeBrand(brand) {
@@ -419,7 +441,7 @@ function generateOpenAiInsights(marketplaceData) {
         role: "user",
         content: JSON.stringify({
           task:
-            "Create a reseller intelligence readout. Choose the one or two strongest categories from the supplied category names only. Mention ASP, velocity, and BOLO logic where relevant.",
+            "Create a reseller intelligence readout. Choose the one or two strongest categories from the supplied category names only. Use ASP and sold-comp depth; do not claim sell-through or active-listing velocity.",
           marketplaceData,
         }),
       },
@@ -464,7 +486,7 @@ function identifyLabelBrand(imageDataUrl) {
       {
         role: "system",
         content:
-          "You identify clothing brand labels from photos. Return only visible or strongly implied label text. If the brand is unclear, use an empty brand and low confidence.",
+          "You identify clothing brands from fast, imperfect reseller photos. Inspect the entire image, including edges and corners. Mentally rotate angled or sideways text and account for perspective, wrinkles, shadows, glare, blur, partial cropping, and labels that are small or off-center. Use visible words, logos, monograms, distinctive typography, and tag design together. Return the most likely brand when there is useful evidence; use an empty brand only when no brand evidence is readable.",
       },
       {
         role: "user",
@@ -472,11 +494,12 @@ function identifyLabelBrand(imageDataUrl) {
           {
             type: "input_text",
             text:
-              "Read this clothing label photo. Identify the most likely clothing brand for resale research. Ignore size, RN numbers, fabric content, care instructions, and country of origin unless they help identify the brand.",
+              "Find the clothing brand anywhere in this uncropped field photo. The label may be angled, folded, partly cut off, or away from the center. Identify the most likely brand for resale research. Do not mistake size, RN numbers, fabric content, care instructions, or country of origin for the brand, but use them as supporting clues when helpful.",
           },
           {
             type: "input_image",
             image_url: imageDataUrl,
+            detail: "high",
           },
         ],
       },
@@ -598,6 +621,43 @@ function postJson(hostname, requestPath, payload, headers) {
   });
 }
 
+function postJsonResponse(hostname, requestPath, payload, headers) {
+  const body = JSON.stringify(payload);
+
+  return new Promise((resolve, reject) => {
+    const request = https.request(
+      {
+        method: "POST",
+        hostname,
+        path: requestPath,
+        headers: {
+          ...headers,
+          "Content-Length": Buffer.byteLength(body),
+        },
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const rawBody = Buffer.concat(chunks).toString();
+          try {
+            resolve({
+              statusCode: response.statusCode,
+              body: JSON.parse(rawBody),
+            });
+          } catch (error) {
+            reject(new Error(`Invalid JSON response: ${rawBody.slice(0, 160)}`));
+          }
+        });
+      },
+    );
+
+    request.on("error", reject);
+    request.write(body);
+    request.end();
+  });
+}
+
 function extractResponseText(response) {
   if (typeof response.output_text === "string") return response.output_text;
 
@@ -669,26 +729,26 @@ function readJsonRequest(req, maxBytes = 1024 * 1024) {
   });
 }
 
-function mapCategoryResponse(category, data) {
+function mapCategoryResponse(brand, category, data) {
   const products = Array.isArray(data.products) ? data.products : [];
   const recentProducts = products.filter(
-    (product) => isSoldWithinDays(product.date_sold, boloLookbackDays) && hasUsableResalePrice(product),
+    (product) =>
+      isSoldWithinDays(product.date_sold, boloLookbackDays) &&
+      hasUsableResalePrice(product) &&
+      titleMatchesBrand(product.title, brand),
   );
   const matchedProducts = recentProducts.filter((product) => {
-    const title = String(product.title || "").toLowerCase();
-    return category.keywords.some((keyword) => title.includes(keyword));
+    const title = normalizeListingText(product.title);
+    return classifyListingCategory(title)?.name === category.name;
   });
   const categoryProducts = matchedProducts;
   const soldListings = categoryProducts.length;
   const averageSalePrice = average(categoryProducts.map((product) => Number(product.sale_price)));
-  const sellThroughRate = estimateSellThroughRate(soldListings, recentProducts.length);
 
   return {
     name: category.name,
-    averageSalePrice: Math.round(averageSalePrice || Number(data.average_price || 0)),
-    sellThroughRate,
+    averageSalePrice: Math.round(averageSalePrice),
     soldListings,
-    activeListings: Math.max(1, Math.round((soldListings * (1 - sellThroughRate)) / sellThroughRate)),
     topItems: categoryProducts
       .filter((product) => Number.isFinite(Number(product.sale_price)))
       .sort((a, b) => Number(b.sale_price) - Number(a.sale_price))
@@ -699,6 +759,36 @@ function mapCategoryResponse(category, data) {
         soldDate: product.date_sold || "Recent sale",
       })),
   };
+}
+
+function titleMatchesBrand(title, brand) {
+  const normalizedTitle = normalizeListingText(title).replace(/\blevi s\b/g, "levis");
+  const normalizedBrand = normalizeBrand(brand);
+  const titleWords = normalizedTitle.split(" ");
+  const brandWords = normalizedBrand.split(" ");
+  const brandStart = titleWords.findIndex((word, index) =>
+    brandWords.every((brandWord, offset) => titleWords[index + offset] === brandWord),
+  );
+  return brandStart >= 0 && brandStart <= 5;
+}
+
+function classifyListingCategory(normalizedTitle) {
+  return marketplaceCategories.find((category) =>
+    category.keywords.some((keyword) => includesListingPhrase(normalizedTitle, keyword)),
+  );
+}
+
+function includesListingPhrase(normalizedTitle, phrase) {
+  const normalizedPhrase = normalizeListingText(phrase);
+  return ` ${normalizedTitle} `.includes(` ${normalizedPhrase} `);
+}
+
+function normalizeListingText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function isSoldWithinDays(dateSold, days) {
@@ -722,12 +812,6 @@ function parseEbaySoldDate(dateSold) {
 function hasUsableResalePrice(product) {
   const price = Number(product.sale_price);
   return Number.isFinite(price) && price >= minimumResalePrice && price <= maximumResalePrice;
-}
-
-function estimateSellThroughRate(results, totalResults) {
-  const returnedVolume = Math.min(results, 60) / 120;
-  const marketDepth = Math.min(totalResults, 5000) / 50000;
-  return clamp(0.34 + returnedVolume + marketDepth, 0.32, 0.86);
 }
 
 function getDataConfidence(sampleSize, categories) {

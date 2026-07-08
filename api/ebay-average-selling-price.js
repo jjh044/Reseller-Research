@@ -31,9 +31,22 @@ const excludedKeywords = "damaged fake replica lot read stains broken parts only
 const lookbackDays = 90;
 const minimumResalePrice = 5;
 const maximumResalePrice = 500;
+const minimumCategoryComps = 2;
 const cacheTtlMilliseconds = 1000 * 60 * 60 * 6;
 const persistentCacheTtlMilliseconds = 1000 * 60 * 60 * 24;
 const responseCache = new Map();
+const marketplaceCategories = [
+  { name: "Jeans", keywords: ["jeans", "denim pants"] },
+  { name: "Jackets", keywords: ["jacket", "jackets", "coat", "coats", "parka", "blazer", "vest"] },
+  { name: "Shirts", keywords: ["shirt", "shirts", "t shirt", "tee", "polo", "blouse", "top", "tops"] },
+  { name: "Pants", keywords: ["pants", "trousers", "chinos", "joggers", "leggings"] },
+  { name: "Dresses", keywords: ["dress", "dresses", "gown"] },
+  { name: "Sweaters", keywords: ["sweater", "sweaters", "cardigan", "pullover", "fleece"] },
+  { name: "Skirts", keywords: ["skirt", "skirts"] },
+  { name: "Shorts", keywords: ["shorts", "cutoffs"] },
+  { name: "Shoes", keywords: ["shoes", "sneakers", "boots", "sandals", "heels", "loafers"] },
+  { name: "Bags", keywords: ["bag", "bags", "purse", "handbag", "backpack", "tote"] },
+];
 
 module.exports = async function handler(req, res) {
   try {
@@ -67,8 +80,14 @@ module.exports = async function handler(req, res) {
 
     const apiResults = await getCategoryResponses(brand);
 
-    const categoriesWithData = apiResults.filter((category) => category.soldListings > 0);
-    const categories = categoriesWithData.length > 0 ? categoriesWithData : apiResults;
+    const categories = apiResults.filter((category) => category.soldListings >= minimumCategoryComps);
+    if (categories.length === 0) {
+      res.status(404).json({
+        error: "No verified category comps found",
+        message: `No categories had at least ${minimumCategoryComps} recent sold listings for ${brand}.`,
+      });
+      return;
+    }
     const sampleSize = categories.reduce((sum, category) => sum + category.soldListings, 0);
 
     const responseBody = {
@@ -128,18 +147,13 @@ function getCachedResponse(brand) {
 }
 
 function getCategoriesForBrand(brand) {
-  return categoryProfiles[normalizeBrand(brand)] || categoryProfiles.default;
+  return marketplaceCategories;
 }
 
 async function getCategoryResponses(brand) {
   const categories = getCategoriesForBrand(brand);
-  const responses = [];
-  for (const category of categories) {
-    const data = await findCompletedItems(`${brand} ${category.query}`);
-    responses.push(mapCategoryResponse(category, data));
-    await wait(250);
-  }
-  return responses;
+  const data = await findCompletedItems(brand);
+  return categories.map((category) => mapCategoryResponse(brand, category, data));
 }
 
 function normalizeBrand(brand) {
@@ -153,7 +167,7 @@ function normalizeBrand(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v1:${normalizeBrand(brand)}:${lookbackDays}`;
+  return `marketplace:v2:${normalizeBrand(brand)}:${lookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -269,26 +283,26 @@ function findCompletedItems(keywords) {
   );
 }
 
-function mapCategoryResponse(category, data) {
+function mapCategoryResponse(brand, category, data) {
   const products = Array.isArray(data.products) ? data.products : [];
   const recentProducts = products.filter(
-    (product) => isSoldWithinDays(product.date_sold, lookbackDays) && hasUsableResalePrice(product),
+    (product) =>
+      isSoldWithinDays(product.date_sold, lookbackDays) &&
+      hasUsableResalePrice(product) &&
+      titleMatchesBrand(product.title, brand),
   );
   const matchedProducts = recentProducts.filter((product) => {
-    const title = String(product.title || "").toLowerCase();
-    return category.keywords.some((keyword) => title.includes(keyword));
+    const title = normalizeListingText(product.title);
+    return classifyListingCategory(title)?.name === category.name;
   });
   const categoryProducts = matchedProducts;
   const soldListings = categoryProducts.length;
   const averageSalePrice = average(categoryProducts.map((product) => Number(product.sale_price)));
-  const sellThroughRate = estimateSellThroughRate(soldListings, recentProducts.length);
 
   return {
     name: category.name,
-    averageSalePrice: Math.round(averageSalePrice || Number(data.average_price || 0)),
-    sellThroughRate,
+    averageSalePrice: Math.round(averageSalePrice),
     soldListings,
-    activeListings: Math.max(1, Math.round((soldListings * (1 - sellThroughRate)) / sellThroughRate)),
     topItems: categoryProducts
       .filter((product) => Number.isFinite(Number(product.sale_price)))
       .sort((a, b) => Number(b.sale_price) - Number(a.sale_price))
@@ -299,6 +313,36 @@ function mapCategoryResponse(category, data) {
         soldDate: product.date_sold || "Recent sale",
       })),
   };
+}
+
+function titleMatchesBrand(title, brand) {
+  const normalizedTitle = normalizeListingText(title).replace(/\blevi s\b/g, "levis");
+  const normalizedBrand = normalizeBrand(brand);
+  const titleWords = normalizedTitle.split(" ");
+  const brandWords = normalizedBrand.split(" ");
+  const brandStart = titleWords.findIndex((word, index) =>
+    brandWords.every((brandWord, offset) => titleWords[index + offset] === brandWord),
+  );
+  return brandStart >= 0 && brandStart <= 5;
+}
+
+function classifyListingCategory(normalizedTitle) {
+  return marketplaceCategories.find((category) =>
+    category.keywords.some((keyword) => includesListingPhrase(normalizedTitle, keyword)),
+  );
+}
+
+function includesListingPhrase(normalizedTitle, phrase) {
+  const normalizedPhrase = normalizeListingText(phrase);
+  return ` ${normalizedTitle} `.includes(` ${normalizedPhrase} `);
+}
+
+function normalizeListingText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function postJsonWithRetry(hostname, requestPath, payload, headers) {
@@ -403,12 +447,6 @@ function isSoldWithinDays(dateSold, days) {
 function hasUsableResalePrice(product) {
   const price = Number(product.sale_price);
   return Number.isFinite(price) && price >= minimumResalePrice && price <= maximumResalePrice;
-}
-
-function estimateSellThroughRate(results, totalResults) {
-  const returnedVolume = Math.min(results, 60) / 120;
-  const marketDepth = Math.min(totalResults, 5000) / 50000;
-  return Math.min(Math.max(0.34 + returnedVolume + marketDepth, 0.32), 0.86);
 }
 
 function average(values) {

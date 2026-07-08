@@ -34,8 +34,9 @@
     <main class="app-shell" id="app-shell" hidden>
       <header class="app-header">
         <nav class="app-tabs" aria-label="App sections">
-          <button type="button" class="tab-button is-active" data-tab-target="home">Home</button>
-          <button type="button" class="tab-button" data-tab-target="results">Results</button>
+          <button type="button" class="tab-button is-active" data-tab-target="home">Scan</button>
+          <button type="button" class="tab-button" data-tab-target="quick-decision">Quick decision</button>
+          <button type="button" class="tab-button" data-tab-target="results">Reseller Report</button>
           <button type="button" class="tab-button" data-tab-target="brand-file">Brand file</button>
         </nav>
         <div class="account-bar">
@@ -48,66 +49,66 @@
       </header>
 
       <section class="tab-panel is-active" data-tab-panel="home">
-        <div class="search-panel" aria-labelledby="app-title">
-          <div class="brand-mark" aria-hidden="true">
-            <span>RR</span>
-          </div>
-          <div>
-            <p class="eyebrow">Resale Radar</p>
-            <h1 id="app-title">Resale Radar</h1>
-            <ol class="instruction-flow" aria-label="App instructions">
-              <li><span>1</span>Enter a clothing brand</li>
-              <li><span>2</span>Generate a reseller sheet</li>
-              <li><span>3</span>Download the PDF</li>
-            </ol>
-            <p class="intro">
-              Spot value. Sell smart. Win the haul.
-            </p>
-          </div>
-
-          <form class="brand-form" id="brand-form">
-            <label for="brand-input">Manual search</label>
-            <div class="input-row">
-              <input
-                id="brand-input"
-                name="brand"
-                type="text"
-                autocomplete="off"
-                placeholder="Try Patagonia, Levi's, or Free People"
-                value="Patagonia"
-              />
-              <button type="submit" id="generate-button">Scan &amp; generate</button>
-            </div>
-          </form>
-
-          <section class="label-scan" aria-labelledby="label-scan-title">
+        <div class="scanner-screen" aria-labelledby="app-title">
+          <div class="scanner-topbar">
             <div>
-              <p class="eyebrow" id="label-scan-title">Instant scan</p>
-              <p class="label-scan-copy">Snap or upload a clear clothing label photo.</p>
+              <p class="eyebrow">Resale Radar</p>
+              <h1 id="app-title">Label scanner</h1>
             </div>
-            <div class="label-input-actions">
-              <label class="file-picker" for="label-camera-input">
-                <span>Take photo</span>
-                <input id="label-camera-input" type="file" accept="image/*" capture="environment" />
+            <button type="button" class="icon-button" id="clear-captures-button" aria-label="Clear captures">
+              Clear
+            </button>
+          </div>
+
+          <section class="camera-lens" aria-label="Camera scanner">
+            <video id="scanner-video" autoplay playsinline muted></video>
+            <div class="camera-fallback" id="camera-fallback" hidden>
+              <p>Camera unavailable</p>
+              <label class="file-picker" for="label-image-input">
+                <span>Upload labels</span>
               </label>
-              <label class="file-picker secondary" for="label-image-input">
-                <span>Upload image</span>
-                <input id="label-image-input" type="file" accept="image/*" />
-              </label>
             </div>
-            <div class="label-preview" id="label-preview" hidden>
-              <img id="label-preview-image" alt="Selected clothing label preview" />
+            <div class="lens-reticle" aria-hidden="true"></div>
+            <div class="scanner-status-row">
+              <span id="scanner-count">0 labels</span>
+              <span id="label-status">Ready</span>
             </div>
-            <button type="button" id="identify-label-button" disabled>Identify label</button>
-            <p class="label-status" id="label-status">No label photo selected.</p>
           </section>
 
-          <ol class="flow-list" aria-label="Data flow">
-            <li><span>1</span>Brand submitted</li>
-            <li><span>2</span>eBay ASP data requested</li>
-            <li><span>3</span>AI insight layer created</li>
-            <li><span>4</span>PDF cheat sheet delivered</li>
-          </ol>
+          <input id="label-camera-input" type="file" accept="image/*" capture="environment" hidden />
+          <input id="label-image-input" type="file" accept="image/*" multiple hidden />
+          <canvas id="capture-canvas" hidden></canvas>
+
+          <div class="capture-controls">
+            <button type="button" class="capture-button" id="capture-button" aria-label="Capture label">
+              <span></span>
+            </button>
+          </div>
+
+          <div class="capture-tray" aria-live="polite">
+            <div class="capture-strip" id="capture-strip"></div>
+          </div>
+
+          <div class="scanner-actions">
+            <button type="button" id="brand-research-button" disabled>Brand research</button>
+            <label class="secondary-button upload-inline" for="label-image-input">Upload</label>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-tab-panel="quick-decision">
+        <div class="quick-decision-panel">
+          <header class="quick-decision-header">
+            <div>
+              <p class="eyebrow">Scanned batch</p>
+              <h2>Quick decision</h2>
+            </div>
+            <p id="quick-decision-count">0 brands</p>
+          </header>
+          <div id="quick-decision-empty" class="empty-state">
+            Scan clothing labels to compare category performance here.
+          </div>
+          <div id="quick-decision-list" class="quick-decision-list" aria-live="polite"></div>
         </div>
       </section>
 
@@ -117,6 +118,21 @@
           <div class="spinner" aria-hidden="true"></div>
           <p>Building reseller intelligence sheet...</p>
         </div>
+
+        <form class="brand-form results-search" id="brand-form">
+          <label for="brand-input">Manual brand lookup</label>
+          <div class="input-row">
+            <input
+              id="brand-input"
+              name="brand"
+              type="text"
+              autocomplete="off"
+              placeholder="Type a clothing brand"
+              value="Patagonia"
+            />
+            <button type="submit" id="generate-button">Research</button>
+          </div>
+        </form>
 
         <div class="sheet-actions">
           <div>

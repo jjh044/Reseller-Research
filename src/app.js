@@ -49,21 +49,33 @@ const button = document.querySelector("#generate-button");
 const saveBrandFileButton = document.querySelector("#save-brand-file-button");
 const pdfButton = document.querySelector("#download-pdf-button");
 const pdfStatus = document.querySelector("#pdf-status");
+const scannerVideo = document.querySelector("#scanner-video");
+const captureCanvas = document.querySelector("#capture-canvas");
+const captureButton = document.querySelector("#capture-button");
+const cameraFallback = document.querySelector("#camera-fallback");
+const captureStrip = document.querySelector("#capture-strip");
+const scannerCount = document.querySelector("#scanner-count");
+const brandResearchButton = document.querySelector("#brand-research-button");
+const clearCapturesButton = document.querySelector("#clear-captures-button");
 const labelCameraInput = document.querySelector("#label-camera-input");
 const labelImageInput = document.querySelector("#label-image-input");
-const identifyLabelButton = document.querySelector("#identify-label-button");
-const labelPreview = document.querySelector("#label-preview");
-const labelPreviewImage = document.querySelector("#label-preview-image");
 const labelStatus = document.querySelector("#label-status");
 const tabButtons = document.querySelectorAll("[data-tab-target]");
 const tabPanels = document.querySelectorAll("[data-tab-panel]");
 const brandFileCount = document.querySelector("#brand-file-count");
 const brandFileEmpty = document.querySelector("#brand-file-empty");
 const brandFileList = document.querySelector("#brand-file-list");
+const quickDecisionCount = document.querySelector("#quick-decision-count");
+const quickDecisionEmpty = document.querySelector("#quick-decision-empty");
+const quickDecisionList = document.querySelector("#quick-decision-list");
 const brandFileStorageKey = "reseller-brand-file-v1";
 const searchHistoryStorageKey = "flipfile-search-history-v1";
 let currentReportData = null;
-let selectedLabelImage = null;
+let capturedLabelImages = [];
+let currentBatchBrands = [];
+let quickDecisionReports = [];
+let quickDecisionFailures = [];
+let cameraStream = null;
 let clerk = null;
 
 const initialBrand = new URLSearchParams(window.location.search).get("brand");
@@ -72,6 +84,8 @@ if (initialBrand) {
 }
 
 await initializeAuth();
+await startScannerCamera();
+renderCaptureStrip();
 
 tabButtons.forEach((tabButton) => {
   tabButton.addEventListener("click", () => {
@@ -91,82 +105,381 @@ form.addEventListener("submit", async (event) => {
   await generateReportForBrand(brand);
 });
 
-labelCameraInput.addEventListener("change", () => {
-  labelImageInput.value = "";
-  handleLabelImageSelection(labelCameraInput.files?.[0]);
-});
-
-labelImageInput.addEventListener("change", () => {
-  labelCameraInput.value = "";
-  handleLabelImageSelection(labelImageInput.files?.[0]);
-});
-
-async function handleLabelImageSelection(file) {
-  selectedLabelImage = null;
-  identifyLabelButton.disabled = true;
-
-  if (!file) {
-    labelPreview.hidden = true;
-    labelPreviewImage.removeAttribute("src");
-    labelStatus.textContent = "No label photo selected.";
+captureButton.addEventListener("click", async () => {
+  if (!cameraStream || scannerVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    labelCameraInput.click();
     return;
   }
 
-  if (!file.type.startsWith("image/")) {
-    labelPreview.hidden = true;
-    labelStatus.textContent = "Choose an image file of the clothing label.";
+  const image = captureVideoFrame();
+  addLabelCapture(image);
+  pulseCaptureButton();
+});
+
+labelCameraInput.addEventListener("change", async () => {
+  const file = labelCameraInput.files?.[0];
+  if (file) await addLabelFiles([file]);
+  labelCameraInput.value = "";
+});
+
+labelImageInput.addEventListener("change", async () => {
+  await addLabelFiles(Array.from(labelImageInput.files || []));
+  labelImageInput.value = "";
+});
+
+clearCapturesButton.addEventListener("click", () => {
+  capturedLabelImages = [];
+  renderCaptureStrip();
+});
+
+captureStrip.addEventListener("click", (event) => {
+  const removeButton = event.target.closest("[data-remove-capture]");
+  if (!removeButton) return;
+  capturedLabelImages.splice(Number(removeButton.dataset.removeCapture), 1);
+  renderCaptureStrip();
+});
+
+brandResearchButton.addEventListener("click", async () => {
+  if (capturedLabelImages.length === 0) return;
+  await researchCapturedLabels();
+});
+
+async function startScannerCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showCameraFallback();
     return;
   }
 
   try {
-    labelStatus.textContent = "Preparing label photo...";
-    selectedLabelImage = await fileToImageDataUrl(file);
-    labelPreviewImage.src = selectedLabelImage;
-    labelPreview.hidden = false;
-    identifyLabelButton.disabled = false;
-    labelStatus.textContent = "Ready to identify this label.";
+    const camera = await openPreferredCamera();
+    cameraStream = camera.stream;
+    scannerVideo.srcObject = cameraStream;
+    await scannerVideo.play();
+    labelStatus.textContent = camera.facing === "user" ? "Webcam ready" : "Ready";
   } catch (error) {
-    console.error(error);
-    labelPreview.hidden = true;
-    labelStatus.textContent = error.message;
+    console.warn("Camera unavailable:", error);
+    showCameraFallback();
   }
 }
 
-identifyLabelButton.addEventListener("click", async () => {
-  if (!selectedLabelImage) return;
+async function openPreferredCamera() {
+  try {
+    return {
+      stream: await openRearCamera(),
+      facing: "environment",
+    };
+  } catch (error) {
+    if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+      throw error;
+    }
 
-  identifyLabelButton.disabled = true;
-  labelStatus.textContent = "Reading label...";
-  setLoading(true);
+    console.info("Outward camera unavailable; trying the user-facing webcam.");
+    return {
+      stream: await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "user" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      }),
+      facing: "user",
+    };
+  }
+}
+
+async function openRearCamera() {
+  const videoSize = {
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  };
 
   try {
-    const detected = await identifyClothingLabel(selectedLabelImage);
-    input.value = detected.brand;
-    labelStatus.textContent = `Detected ${detected.brand} (${formatConfidence(detected.confidence)} confidence).`;
-    await generateReportForBrand(detected.brand);
+    return await navigator.mediaDevices.getUserMedia({
+      video: {
+        ...videoSize,
+        facingMode: { exact: "environment" },
+      },
+      audio: false,
+    });
   } catch (error) {
-    console.error(error);
-    currentReportData = null;
-    report.innerHTML = "";
-    labelStatus.textContent = error.message;
-    pdfStatus.textContent = error.message;
-  } finally {
-    setLoading(false);
-    identifyLabelButton.disabled = !selectedLabelImage;
+    if (error.name !== "OverconstrainedError" && error.name !== "NotFoundError") {
+      throw error;
+    }
   }
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const rearCamera = devices.find(
+    (device) =>
+      device.kind === "videoinput" &&
+      /\b(back|rear|environment|world)\b/i.test(device.label)
+  );
+
+  if (!rearCamera) {
+    throw new DOMException("No outward-facing camera found.", "NotFoundError");
+  }
+
+  return navigator.mediaDevices.getUserMedia({
+    video: {
+      ...videoSize,
+      deviceId: { exact: rearCamera.deviceId },
+    },
+    audio: false,
+  });
+}
+
+function showCameraFallback() {
+  cameraFallback.hidden = false;
+  scannerVideo.hidden = true;
+  captureButton.classList.add("is-upload");
+  captureButton.setAttribute("aria-label", "Take or upload label photo");
+  labelStatus.textContent = "Upload mode";
+}
+
+function captureVideoFrame() {
+  const width = scannerVideo.videoWidth;
+  const height = scannerVideo.videoHeight;
+  captureCanvas.width = width;
+  captureCanvas.height = height;
+  captureCanvas.getContext("2d").drawImage(scannerVideo, 0, 0, width, height);
+  return captureCanvas.toDataURL("image/jpeg", 0.9);
+}
+
+function pulseCaptureButton() {
+  captureButton.classList.remove("did-capture");
+  requestAnimationFrame(() => captureButton.classList.add("did-capture"));
+}
+
+async function addLabelFiles(files) {
+  const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+  if (imageFiles.length === 0) {
+    labelStatus.textContent = "Choose label photos";
+    return;
+  }
+
+  labelStatus.textContent = "Adding photos...";
+  const images = await Promise.all(imageFiles.map(fileToImageDataUrl));
+  images.forEach(addLabelCapture);
+}
+
+function addLabelCapture(image) {
+  capturedLabelImages.push(image);
+  renderCaptureStrip();
+}
+
+function renderCaptureStrip() {
+  scannerCount.textContent = `${capturedLabelImages.length} ${capturedLabelImages.length === 1 ? "label" : "labels"}`;
+  brandResearchButton.disabled = capturedLabelImages.length === 0;
+  clearCapturesButton.disabled = capturedLabelImages.length === 0;
+  labelStatus.textContent = capturedLabelImages.length === 0 ? "Ready" : "Keep scanning";
+
+  captureStrip.innerHTML = capturedLabelImages
+    .map(
+      (image, index) => `
+        <div class="capture-thumb">
+          <img src="${image}" alt="Captured label ${index + 1}" />
+          <button type="button" data-remove-capture="${index}" aria-label="Remove captured label ${index + 1}">&times;</button>
+        </div>
+      `,
+    )
+    .join("");
+
+  captureStrip.lastElementChild?.scrollIntoView({ behavior: "smooth", inline: "end", block: "nearest" });
+}
+
+async function researchCapturedLabels() {
+  const captures = [...capturedLabelImages];
+  brandResearchButton.disabled = true;
+  brandResearchButton.textContent = "Reading labels...";
+  labelStatus.textContent = `Reading 1 of ${captures.length}`;
+
+  const detectedBrands = [];
+  const identificationErrors = [];
+  for (const [index, image] of captures.entries()) {
+    labelStatus.textContent = `Reading ${index + 1} of ${captures.length}`;
+    try {
+      const detected = await identifyClothingLabel(image);
+      if (!detectedBrands.some((item) => item.brand.toLowerCase() === detected.brand.toLowerCase())) {
+        detectedBrands.push(detected);
+      }
+    } catch (error) {
+      console.warn(`Could not identify capture ${index + 1}:`, error);
+      identificationErrors.push(error.message);
+    }
+  }
+
+  if (detectedBrands.length === 0) {
+    brandResearchButton.disabled = false;
+    brandResearchButton.textContent = "Brand research";
+    const configurationError = identificationErrors.find((message) =>
+      /api key|server error|network|fetch/i.test(message)
+    );
+    labelStatus.textContent =
+      configurationError || "No readable brand found. Try another angle with the label in view.";
+    return;
+  }
+
+  currentBatchBrands = detectedBrands;
+  labelStatus.textContent = `Researching ${detectedBrands.length} ${detectedBrands.length === 1 ? "brand" : "brands"}`;
+  brandResearchButton.textContent = "Building decisions...";
+  renderQuickDecisionLoading(detectedBrands);
+  activateTab("quick-decision");
+
+  const reportResults = await Promise.allSettled(
+    detectedBrands.map((item) => buildReportData(item.brand)),
+  );
+  quickDecisionReports = reportResults
+    .filter((result) => result.status === "fulfilled")
+    .map((result) => result.value);
+  quickDecisionFailures = reportResults
+    .map((result, index) => ({ result, brand: detectedBrands[index].brand }))
+    .filter(({ result }) => result.status === "rejected")
+    .map(({ result, brand }) => ({
+      brand,
+      message: result.reason?.message || "No verified category data was found.",
+    }));
+
+  if (quickDecisionReports.length === 0) {
+    renderQuickDecision();
+    labelStatus.textContent = "No verified categories found";
+    brandResearchButton.textContent = "Brand research";
+    brandResearchButton.disabled = false;
+    return;
+  }
+
+  quickDecisionReports.forEach(saveSearchHistory);
+  currentReportData = quickDecisionReports[0];
+  input.value = currentReportData.brand;
+  renderReport(currentReportData);
+  renderBatchBrands(detectedBrands);
+  setLoading(false);
+  renderQuickDecision();
+  activateTab("quick-decision");
+  labelStatus.textContent = `${quickDecisionReports.length} ${quickDecisionReports.length === 1 ? "brand" : "brands"} ready`;
+  brandResearchButton.textContent = "Brand research";
+  brandResearchButton.disabled = false;
+}
+
+function renderQuickDecisionLoading(detectedBrands) {
+  quickDecisionEmpty.hidden = true;
+  quickDecisionCount.textContent = `${detectedBrands.length} ${detectedBrands.length === 1 ? "brand" : "brands"}`;
+  quickDecisionList.innerHTML = detectedBrands
+    .map(
+      (item) => `
+        <section class="quick-brand-section is-loading">
+          <header class="quick-brand-header">
+            <div>
+              <p class="eyebrow">Reading categories</p>
+              <h3>${escapeHtml(item.brand)}</h3>
+            </div>
+          </header>
+          <div class="quick-category-loading">Loading category performance...</div>
+        </section>
+      `,
+    )
+    .join("");
+}
+
+function renderQuickDecision() {
+  const totalBrands = quickDecisionReports.length + quickDecisionFailures.length;
+  quickDecisionEmpty.hidden = totalBrands > 0;
+  quickDecisionCount.textContent = `${totalBrands} ${totalBrands === 1 ? "brand" : "brands"}`;
+  const reportSections = quickDecisionReports
+    .map((reportData) => {
+      const maxScore = Math.max(
+        ...reportData.categories.map(categoryOpportunityScore),
+      );
+      const strongestCategories = reportData.aiInsights?.strongestCategories || [];
+
+      return `
+        <section class="quick-brand-section">
+          <header class="quick-brand-header">
+            <div>
+              <p class="eyebrow">Category performance</p>
+              <h3>${escapeHtml(reportData.brand)}</h3>
+            </div>
+            <button type="button" data-reseller-report="${escapeHtml(reportData.brand)}">
+              Reseller report
+            </button>
+          </header>
+          <div class="category-grid quick-category-grid">
+            ${[...reportData.categories]
+              .sort((a, b) => b.averageSalePrice - a.averageSalePrice)
+              .map((category) => renderCategory(category, maxScore, strongestCategories, reportData))
+              .join("")}
+          </div>
+        </section>
+      `;
+    })
+    .join("");
+  const failureSections = quickDecisionFailures
+    .map(
+      (failure) => `
+        <section class="quick-brand-section">
+          <header class="quick-brand-header">
+            <div>
+              <p class="eyebrow">No verified categories</p>
+              <h3>${escapeHtml(failure.brand)}</h3>
+            </div>
+          </header>
+          <p class="quick-brand-message">${escapeHtml(failure.message)}</p>
+        </section>
+      `,
+    )
+    .join("");
+  quickDecisionList.innerHTML = reportSections + failureSections;
+}
+
+quickDecisionList.addEventListener("click", (event) => {
+  const reportButton = event.target.closest("[data-reseller-report]");
+  if (!reportButton) return;
+
+  const selectedReport = quickDecisionReports.find(
+    (item) => item.brand.toLowerCase() === reportButton.dataset.resellerReport.toLowerCase(),
+  );
+  if (!selectedReport) return;
+
+  currentReportData = selectedReport;
+  input.value = selectedReport.brand;
+  renderReport(selectedReport);
+  renderBatchBrands(currentBatchBrands);
+  setLoading(false);
+  activateTab("results");
 });
+
+function renderBatchBrands(detectedBrands) {
+  report.querySelector(".batch-brands")?.remove();
+  const batch = document.createElement("section");
+  batch.className = "batch-brands";
+  batch.innerHTML = `
+    <div>
+      <p class="eyebrow">Scanned batch</p>
+      <h3>${detectedBrands.length} ${detectedBrands.length === 1 ? "brand" : "brands"} detected</h3>
+    </div>
+    <div class="batch-brand-list">
+      ${detectedBrands
+        .map(
+          (item) => `
+            <button
+              type="button"
+              data-batch-brand="${escapeHtml(item.brand)}"
+              class="${item.brand.toLowerCase() === input.value.toLowerCase() ? "is-active" : ""}"
+            >
+              ${escapeHtml(item.brand)}
+            </button>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+  report.prepend(batch);
+}
 
 async function generateReportForBrand(brand) {
   setLoading(true);
   let loadError = null;
   try {
-    const marketplaceData = await fetchEbayAverageSellingPrice(brand);
-    const aiInsights = await generateAiInsights(marketplaceData);
-    currentReportData = {
-      ...marketplaceData,
-      aiInsights,
-      sourcing: buildSourcingGuidance(marketplaceData, aiInsights),
-    };
+    currentReportData = await buildReportData(brand);
     saveSearchHistory(currentReportData);
     renderReport(currentReportData);
   } catch (error) {
@@ -180,6 +493,16 @@ async function generateReportForBrand(brand) {
       pdfStatus.textContent = loadError.message;
     }
   }
+}
+
+async function buildReportData(brand) {
+  const marketplaceData = await fetchEbayAverageSellingPrice(brand);
+  const aiInsights = await generateAiInsights(marketplaceData);
+  return {
+    ...marketplaceData,
+    aiInsights,
+    sourcing: buildSourcingGuidance(marketplaceData, aiInsights),
+  };
 }
 
 saveBrandFileButton.addEventListener("click", async () => {
@@ -231,6 +554,14 @@ brandFileList.addEventListener("click", async (event) => {
 });
 
 report.addEventListener("click", async (event) => {
+  const batchButton = event.target.closest("[data-batch-brand]");
+  if (batchButton) {
+    input.value = batchButton.dataset.batchBrand;
+    await generateReportForBrand(batchButton.dataset.batchBrand);
+    renderBatchBrands(currentBatchBrands);
+    return;
+  }
+
   const historyButton = event.target.closest("[data-history-brand]");
   if (!historyButton) return;
 
@@ -253,7 +584,8 @@ async function initializeAuth() {
 
     const config = await configResponse.json();
     if (!config.clerkPublishableKey) {
-      throw new Error("Clerk publishable key is not configured.");
+      enableLocalOnlyMode();
+      return;
     }
 
     await loadClerkBrowserSdk(config.clerkPublishableKey);
@@ -272,6 +604,19 @@ async function initializeAuth() {
     appShell.hidden = true;
     authShell.hidden = false;
   }
+}
+
+function enableLocalOnlyMode() {
+  clerk = null;
+  authShell.hidden = true;
+  appShell.hidden = false;
+  authActions.hidden = true;
+  authStatus.textContent = "";
+  authMount.innerHTML = "";
+  accountEmail.textContent = "Local mode";
+  userButtonMount.innerHTML = "";
+  pdfStatus.textContent = "Brand files are saved locally on this device.";
+  renderBrandFile();
 }
 
 function syncAuthState(isServerAuthConfigured) {
@@ -512,12 +857,12 @@ async function fetchEbayAverageSellingPrice(brand) {
         generatedAt: new Date(data.generatedAt),
       };
     } catch (error) {
-      console.warn("Falling back to local marketplace estimate:", error);
-      return fetchMockEbayAverageSellingPrice(brand, error.message);
+      console.error("Live marketplace data unavailable:", error);
+      throw error;
     }
   }
 
-  return fetchMockEbayAverageSellingPrice(brand);
+  throw new Error("Live marketplace data requires the app server.");
 }
 
 async function identifyClothingLabel(imageDataUrl) {
@@ -557,7 +902,7 @@ function fileToImageDataUrl(file) {
 }
 
 function resizeImageToDataUrl(image) {
-  const maxSide = 1280;
+  const maxSide = 2048;
   const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
   const height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -568,56 +913,7 @@ function resizeImageToDataUrl(image) {
   canvas.height = height;
   context.drawImage(image, 0, 0, width, height);
 
-  return canvas.toDataURL("image/jpeg", 0.82);
-}
-
-async function fetchMockEbayAverageSellingPrice(brand, fallbackReason = "") {
-  await wait(520);
-
-  const normalized = brand.toLowerCase();
-  const seed = categorySeeds[normalized] ?? fallbackCategories;
-  const brandAdjustment = getBrandAdjustment(brand);
-
-  const categories = seed.map(([name, asp, sellThroughRate, topItems], index) => {
-    const adjustedAsp = Math.round(asp * brandAdjustment + index * 2);
-    const adjustedSellThrough = clamp(sellThroughRate + (brandAdjustment - 1) / 5, 0.32, 0.86);
-
-    return {
-      name,
-      averageSalePrice: adjustedAsp,
-      sellThroughRate: adjustedSellThrough,
-      soldListings: Math.round(90 + adjustedSellThrough * 170 + index * 14),
-      activeListings: Math.round(110 + (1 - adjustedSellThrough) * 220 + index * 18),
-      topItems: topItems.map((title, itemIndex) => ({
-        title: `${brand} ${title}`,
-        salePrice: Math.max(14, adjustedAsp + 18 - itemIndex * 8),
-        daysToSell: Math.round(5 + itemIndex * 4 + (1 - adjustedSellThrough) * 18),
-      })),
-    };
-  });
-
-  return {
-    brand,
-    generatedAt: new Date(),
-    source: fallbackReason
-      ? `Estimated data - live eBay unavailable: ${fallbackReason}`
-      : "Estimated marketplace model",
-    dataMode: "estimated",
-    lookbackDays: 90,
-    sampleSize: categories.reduce((sum, category) => sum + category.soldListings, 0),
-    confidence: {
-      level: fallbackReason ? "low" : "medium",
-      sampleSize: categories.reduce((sum, category) => sum + category.soldListings, 0),
-      note: fallbackReason
-        ? "Live marketplace data was unavailable. Treat this report as directional."
-        : "Estimated model data. Validate buys with live sold comps before paying up.",
-    },
-    cache: {
-      status: "local-estimate",
-      ttlHours: 0,
-    },
-    categories,
-  };
+  return canvas.toDataURL("image/jpeg", 0.9);
 }
 
 async function generateAiInsights(marketplaceData) {
@@ -637,7 +933,7 @@ async function generateAiInsights(marketplaceData) {
 
       return response.json();
     } catch (error) {
-      console.warn("Falling back to mock AI insights:", error);
+      console.warn("Falling back to a local summary of live marketplace data:", error);
     }
   }
 
@@ -659,25 +955,25 @@ async function generateMockAiInsights(marketplaceData) {
   const scoredCategories = marketplaceData.categories
     .map((category) => ({
       ...category,
-      score: category.averageSalePrice * category.sellThroughRate,
+      score: categoryOpportunityScore(category),
     }))
     .sort((a, b) => b.score - a.score);
 
   const strongest = scoredCategories.slice(0, 2);
-  const fastest = [...marketplaceData.categories].sort((a, b) => b.sellThroughRate - a.sellThroughRate)[0];
+  const mostProven = [...marketplaceData.categories].sort((a, b) => b.soldListings - a.soldListings)[0];
   const premium = [...marketplaceData.categories].sort((a, b) => b.averageSalePrice - a.averageSalePrice)[0];
   const strongestNames = strongest.map((category) => category.name).join(strongest.length > 1 ? " and " : "");
 
   return {
     headline: `${marketplaceData.brand} looks strongest in ${strongestNames}.`,
-    recommendation: `Prioritize ${strongest[0].name.toLowerCase()} when buy cost leaves room for a 3x-4x multiple. ${fastest.name} has the cleanest velocity signal, while ${premium.name} creates the highest average gross sale opportunity.`,
+    recommendation: `Prioritize ${strongest[0].name.toLowerCase()} when buy cost leaves room for a 3x-4x multiple. ${mostProven.name} has the deepest sold-comp sample, while ${premium.name} creates the highest average gross sale opportunity.`,
     strongestCategories: strongest,
   };
 }
 
 function renderReport(data) {
-  const { totalSold, totalActive, blendedAsp, blendedStr } = summarizeReportData(data);
-  const maxScore = Math.max(...data.categories.map((category) => category.averageSalePrice * category.sellThroughRate));
+  const { totalSold, blendedAsp } = summarizeReportData(data);
+  const maxScore = Math.max(...data.categories.map(categoryOpportunityScore));
   const categoriesByAsp = [...data.categories].sort((a, b) => b.averageSalePrice - a.averageSalePrice);
   const boloRows = data.categories
     .filter((category) => category.topItems.length > 0)
@@ -692,16 +988,16 @@ function renderReport(data) {
         <p class="timestamp">Generated ${formatDate(data.generatedAt)}</p>
       </div>
       <div class="grade">
-        <span>${getGrade(blendedAsp, blendedStr)}</span>
+        <span>${getGrade(blendedAsp, totalSold)}</span>
         Resale grade
       </div>
     </header>
 
     <section class="kpi-grid" aria-label="Brand summary metrics">
       ${renderKpi("Blended ASP", formatReportCurrency(blendedAsp, data), "Average sold price across tracked clothing categories")}
-      ${renderKpi("Sell-through", formatPercent(blendedStr), "Sold listings divided by sold plus active listings")}
+      ${renderKpi("Verified categories", data.categories.length.toLocaleString(), "Categories supported by multiple matching sold listings")}
       ${renderKpi("Sold comps", totalSold.toLocaleString(), "Completed listings in the analysis window")}
-      ${renderKpi("Active listings", totalActive.toLocaleString(), "Visible market supply in the analysis window")}
+      ${renderKpi("Lookback", `${Number(data.lookbackDays || 90)} days`, "Completed-sale window used for this report")}
     </section>
 
     <section class="trust-band">
@@ -781,17 +1077,16 @@ function renderReport(data) {
 
 function summarizeReportData(data) {
   const totalSold = data.categories.reduce((sum, category) => sum + category.soldListings, 0);
-  const totalActive = data.categories.reduce((sum, category) => sum + category.activeListings, 0);
   const blendedAsp = Math.round(
-    data.categories.reduce((sum, category) => sum + category.averageSalePrice, 0) / data.categories.length,
+    data.categories.reduce(
+      (sum, category) => sum + category.averageSalePrice * category.soldListings,
+      0,
+    ) / Math.max(1, totalSold),
   );
-  const blendedStr = totalSold / (totalSold + totalActive);
 
   return {
     totalSold,
-    totalActive,
     blendedAsp,
-    blendedStr,
   };
 }
 
@@ -816,7 +1111,7 @@ function renderSourcingCard(label, value, detail) {
 }
 
 function buildSourcingGuidance(marketplaceData) {
-  const { blendedAsp, blendedStr } = summarizeReportData(marketplaceData);
+  const { blendedAsp, totalSold } = summarizeReportData(marketplaceData);
   const feeRate = 0.15;
   const shippingBuffer = 8;
   const targetMargin = marketplaceData.confidence?.level === "low" ? 0.34 : 0.42;
@@ -824,24 +1119,23 @@ function buildSourcingGuidance(marketplaceData) {
   const maxBuyPrice = Math.max(3, Math.floor(expectedNet * targetMargin));
   const lowProfit = Math.max(0, Math.round(blendedAsp * 0.72 - maxBuyPrice - shippingBuffer));
   const highProfit = Math.max(lowProfit + 4, Math.round(blendedAsp * 0.86 - maxBuyPrice - shippingBuffer));
-  const decisionScore = blendedAsp * blendedStr;
   const decision =
     marketplaceData.confidence?.level === "low"
       ? "Watch"
-      : decisionScore >= 42
+      : blendedAsp >= 55 && totalSold >= 10
         ? "Buy"
-        : decisionScore >= 28
+        : blendedAsp >= 30 && totalSold >= 4
           ? "Selective buy"
           : "Pass";
   const strongest = [...marketplaceData.categories].sort(
-    (a, b) => b.averageSalePrice * b.sellThroughRate - a.averageSalePrice * a.sellThroughRate,
+    (a, b) => categoryOpportunityScore(b) - categoryOpportunityScore(a),
   )[0];
 
   return {
     decision,
     decisionReason:
       decision === "Buy"
-        ? `${strongest.name} has the best price plus velocity signal.`
+        ? `${strongest.name} has the strongest price and sold-comp depth.`
         : decision === "Selective buy"
           ? `Only buy stronger ${strongest.name.toLowerCase()} pieces below the max buy target.`
           : decision === "Watch"
@@ -855,7 +1149,7 @@ function buildSourcingGuidance(marketplaceData) {
 
 function getAvoidNotes(marketplaceData) {
   const lowCategories = marketplaceData.categories
-    .filter((category) => category.sellThroughRate < 0.48 || category.averageSalePrice < 30)
+    .filter((category) => category.soldListings < 3 || category.averageSalePrice < 30)
     .map((category) => category.name.toLowerCase())
     .slice(0, 2);
   const categoryNote = lowCategories.length ? `Be careful with ${lowCategories.join(" and ")}.` : "";
@@ -925,7 +1219,7 @@ function renderSearchHistory() {
 }
 
 function renderCategory(category, maxScore, strongestCategories, reportData) {
-  const score = category.averageSalePrice * category.sellThroughRate;
+  const score = categoryOpportunityScore(category);
   const strength = Math.round((score / maxScore) * 100);
   const isStrong = strongestCategories.some((strongCategory) => strongCategory.name === category.name);
 
@@ -943,8 +1237,8 @@ function renderCategory(category, maxScore, strongestCategories, reportData) {
           <dd>${formatReportCurrency(category.averageSalePrice, reportData)}</dd>
         </div>
         <div>
-          <dt>STR</dt>
-          <dd>${formatPercent(category.sellThroughRate)}</dd>
+          <dt>Sold comps</dt>
+          <dd>${Number(category.soldListings || 0).toLocaleString()}</dd>
         </div>
       </dl>
       <div class="meter" aria-label="${category.name} opportunity score ${strength}%">
@@ -965,11 +1259,14 @@ function renderItemRow(category, item) {
   `;
 }
 
-function getGrade(asp, sellThroughRate) {
-  const score = asp * sellThroughRate;
-  if (score >= 45) return "A";
-  if (score >= 34) return "B";
+function getGrade(asp, soldComps) {
+  if (asp >= 60 && soldComps >= 10) return "A";
+  if (asp >= 40 && soldComps >= 6) return "B";
   return "C";
+}
+
+function categoryOpportunityScore(category) {
+  return Number(category.averageSalePrice || 0) * Math.log2(Number(category.soldListings || 0) + 1);
 }
 
 function getBrandAdjustment(brand) {
@@ -988,7 +1285,7 @@ function formatCurrency(value) {
 function formatReportCurrency(value, reportData) {
   const shouldRound = reportData?.dataMode === "estimated" || reportData?.confidence?.level === "low";
   const displayValue = shouldRound ? Math.round(Number(value || 0) / 5) * 5 : Number(value || 0);
-  return `${shouldRound ? "About " : ""}${formatCurrency(displayValue)}`;
+  return formatCurrency(displayValue);
 }
 
 function formatPercent(value) {

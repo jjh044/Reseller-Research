@@ -21,10 +21,10 @@ module.exports = async function handler(req, res) {
     const labelResult = await identifyLabelBrand(image);
     const normalized = normalizeLabelResult(labelResult);
 
-    if (!normalized.brand || normalized.confidence < 0.35) {
+    if (!normalized.brand || normalized.confidence < 0.2) {
       res.status(422).json({
         error: "Could not confidently identify a brand label",
-        message: "Try a sharper, closer photo with the full label text visible.",
+        message: "No readable brand name was found. Try another angle with the label in view.",
         ...normalized,
       });
       return;
@@ -62,7 +62,7 @@ function identifyLabelBrand(imageDataUrl) {
         {
           role: "system",
           content:
-            "You identify clothing brand labels from photos. Return only visible or strongly implied label text. If the brand is unclear, use an empty brand and low confidence.",
+            "You identify clothing brands from fast, imperfect reseller photos. Inspect the entire image, including edges and corners. Mentally rotate angled or sideways text and account for perspective, wrinkles, shadows, glare, blur, partial cropping, and labels that are small or off-center. Use visible words, logos, monograms, distinctive typography, and tag design together. Return the most likely brand when there is useful evidence; use an empty brand only when no brand evidence is readable.",
         },
         {
           role: "user",
@@ -70,11 +70,12 @@ function identifyLabelBrand(imageDataUrl) {
             {
               type: "input_text",
               text:
-                "Read this clothing label photo. Identify the most likely clothing brand for resale research. Ignore size, RN numbers, fabric content, care instructions, and country of origin unless they help identify the brand.",
+                "Find the clothing brand anywhere in this uncropped field photo. The label may be angled, folded, partly cut off, or away from the center. Identify the most likely brand for resale research. Do not mistake size, RN numbers, fabric content, care instructions, or country of origin for the brand, but use them as supporting clues when helpful.",
             },
             {
               type: "input_image",
               image_url: imageDataUrl,
+              detail: "high",
             },
           ],
         },

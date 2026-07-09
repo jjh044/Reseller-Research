@@ -108,8 +108,9 @@ module.exports = async function handler(req, res) {
 
     const marketplaceData = await getMarketplaceData(brand);
 
+    const verifiedCategories = marketplaceData.categories.filter((category) => category.soldListings >= minimumCategoryComps);
     const categories = selectTopResultCategories(
-      marketplaceData.categories.filter((category) => category.soldListings >= minimumCategoryComps),
+      await enrichCategoriesWithSellThroughRates(brand, verifiedCategories),
     );
     if (categories.length === 0) {
       res.status(404).json({
@@ -275,6 +276,8 @@ function getEstimatedCategories(brand) {
     name,
     averageSalePrice,
     soldListings,
+    listedListings: soldListings * 4,
+    sellThroughRate: 0.25,
     topItems: itemTitles.slice(0, 3).map((title, index) => ({
       title: `${brand} ${title}`,
       salePrice: Math.max(5, Math.round(averageSalePrice * (1.18 - index * 0.11))),
@@ -317,7 +320,108 @@ function selectTopResultCategories(categories) {
 }
 
 function getCategoryOpportunityScore(category) {
-  return Number(category.averageSalePrice || 0) * Math.log2(Number(category.soldListings || 0) + 1);
+  const sellThroughRate = Number(category.sellThroughRate);
+  const velocity = Number.isFinite(sellThroughRate)
+    ? sellThroughRate * Math.log2(Number(category.soldListings || 0) + 1)
+    : Math.log2(Number(category.soldListings || 0) + 1);
+  return Number(category.averageSalePrice || 0) * velocity;
+}
+
+async function enrichCategoriesWithSellThroughRates(brand, categories) {
+  const enrichedCategories = await Promise.all(
+    categories.map(async (category) => {
+      const listedListings = await getActiveListingCount(`${brand} ${category.name}`);
+      return withSellThroughRate(category, listedListings);
+    }),
+  );
+  return enrichedCategories;
+}
+
+function withSellThroughRate(category, listedListings) {
+  const soldListings = Number(category.soldListings || 0);
+  const activeListings = Number(listedListings);
+  const hasListedListings = Number.isFinite(activeListings) && activeListings > 0;
+
+  return {
+    ...category,
+    listedListings: hasListedListings ? activeListings : null,
+    sellThroughRate: hasListedListings ? soldListings / activeListings : null,
+  };
+}
+
+async function getActiveListingCount(query) {
+  try {
+    const html = await getEbaySearchHtml(query);
+    return parseEbayResultCount(html);
+  } catch (error) {
+    console.warn(`Could not load active eBay listing count for "${query}":`, error.message);
+    return null;
+  }
+}
+
+function getEbaySearchHtml(query, redirectCount = 0) {
+  const searchPath = `/sch/i.html?_nkw=${encodeURIComponent(query)}&_sacat=0`;
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      {
+        hostname: "www.ebay.com",
+        path: searchPath,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        timeout: 6500,
+      },
+      (response) => {
+        if (
+          response.statusCode >= 300 &&
+          response.statusCode < 400 &&
+          response.headers.location &&
+          redirectCount < 2
+        ) {
+          response.resume();
+          const redirectUrl = new URL(response.headers.location, "https://www.ebay.com");
+          getEbaySearchHtml(redirectUrl.searchParams.get("_nkw") || query, redirectCount + 1)
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
+
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          response.resume();
+          reject(new Error(`eBay search failed with ${response.statusCode}`));
+          return;
+        }
+
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => resolve(Buffer.concat(chunks).toString()));
+      },
+    );
+
+    request.on("timeout", () => request.destroy(new Error("eBay active listing count timed out")));
+    request.on("error", reject);
+  });
+}
+
+function parseEbayResultCount(html) {
+  const value = String(html || "");
+  const patterns = [
+    /"totalCount"\s*:\s*"?([\d,]+)"?/i,
+    /"resultCount"\s*:\s*"?([\d,]+)"?/i,
+    /([\d,]+)\s+results?\s+for/i,
+    /([\d,]+)\s+results?/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+    if (!match) continue;
+    const count = Number(String(match[1]).replace(/,/g, ""));
+    if (Number.isFinite(count)) return count;
+  }
+
+  return null;
 }
 
 function normalizeBrand(brand) {
@@ -331,7 +435,7 @@ function normalizeBrand(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v4:${normalizeBrand(brand)}:${lookbackDays}`;
+  return `marketplace:v5:${normalizeBrand(brand)}:${lookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {

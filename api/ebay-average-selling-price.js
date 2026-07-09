@@ -75,13 +75,14 @@ const defaultEstimatedCategorySeed = [
 ];
 
 module.exports = async function handler(req, res) {
+  let requestedBrand = String(req.query.brand || "").trim();
   try {
     if (!process.env.RAPIDAPI_KEY) {
       res.status(500).json({ error: "Missing RAPIDAPI_KEY environment variable" });
       return;
     }
 
-    const brand = String(req.query.brand || "").trim();
+    const brand = requestedBrand;
     if (!brand) {
       res.status(400).json({ error: "Missing brand query parameter" });
       return;
@@ -147,13 +148,13 @@ module.exports = async function handler(req, res) {
         at: new Date().toISOString(),
       }),
     );
-    const staleCache = await getPersistentMarketplaceCache(getMarketplaceCacheKey(req.query.brand || ""));
+    const staleCache = await getPersistentMarketplaceCache(getMarketplaceCacheKey(requestedBrand));
     if (staleCache) {
       res.status(200).json(markCachedResponse(staleCache.responseData, "stale-cache", staleCache, error.message));
       return;
     }
-    if (isRateLimitError(error)) {
-      res.status(200).json(getEstimatedMarketplaceResponse(brand, error.message));
+    if (isRateLimitError(error) && requestedBrand) {
+      res.status(200).json(getEstimatedMarketplaceResponse(requestedBrand, error.message));
       return;
     }
     res.status(isRateLimitError(error) ? 429 : 500).json(getMarketplaceErrorBody(error));

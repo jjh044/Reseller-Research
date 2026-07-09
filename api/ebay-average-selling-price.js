@@ -47,6 +47,32 @@ const marketplaceCategories = [
   { name: "Shoes", keywords: ["shoes", "sneakers", "boots", "sandals", "heels", "loafers"] },
   { name: "Bags", keywords: ["bag", "bags", "purse", "handbag", "backpack", "tote"] },
 ];
+const estimatedCategorySeeds = {
+  patagonia: [
+    ["Fleece", 64, 18, ["Synchilla Snap-T Pullover", "Better Sweater Jacket", "Retro Pile Vest"]],
+    ["Jackets", 92, 16, ["Nano Puff Jacket", "Torrentshell Rain Jacket", "Houdini Windbreaker"]],
+    ["Shirts", 31, 12, ["Capilene Cool Tee", "Organic Cotton Flannel", "P-6 Logo Tee"]],
+    ["Pants", 47, 10, ["Quandary Hiking Pants", "Baggies Shorts", "Terrebonne Joggers"]],
+  ],
+  levis: [
+    ["Jeans", 42, 20, ["501 Original Fit Jeans", "Wedgie Straight Jeans", "505 Regular Jeans"]],
+    ["Jackets", 58, 14, ["Type III Trucker Jacket", "Sherpa Trucker Jacket", "Vintage Denim Jacket"]],
+    ["Shirts", 27, 9, ["Western Denim Shirt", "Graphic Logo Tee", "Plaid Work Shirt"]],
+    ["Shorts", 24, 7, ["501 Cutoff Shorts", "High Loose Shorts", "Bermuda Denim Shorts"]],
+  ],
+  "free people": [
+    ["Dresses", 54, 15, ["Adella Slip Dress", "Feeling Groovy Maxi", "Oasis Midi Dress"]],
+    ["Tops", 36, 13, ["Intimately Cami", "Easy Street Tunic", "We The Free Henley"]],
+    ["Sweaters", 49, 11, ["Ottoman Slouchy Tunic", "Bonfire Cardigan", "Low Tide Pullover"]],
+    ["Jeans", 46, 8, ["CRVY Flare Jeans", "Good Luck Barrel Jeans", "Moxie Pull-On Jeans"]],
+  ],
+};
+const defaultEstimatedCategorySeed = [
+  ["Jackets", 61, 10, ["Utility Jacket", "Quilted Coat", "Denim Trucker Jacket"]],
+  ["Jeans", 38, 12, ["High Rise Straight Jeans", "Vintage Wash Denim", "Relaxed Fit Jeans"]],
+  ["Shirts", 29, 9, ["Logo Tee", "Linen Button Down", "Plaid Overshirt"]],
+  ["Dresses", 44, 8, ["Midi Dress", "Wrap Dress", "Sleeveless Maxi Dress"]],
+];
 
 module.exports = async function handler(req, res) {
   try {
@@ -124,6 +150,10 @@ module.exports = async function handler(req, res) {
     const staleCache = await getPersistentMarketplaceCache(getMarketplaceCacheKey(req.query.brand || ""));
     if (staleCache) {
       res.status(200).json(markCachedResponse(staleCache.responseData, "stale-cache", staleCache, error.message));
+      return;
+    }
+    if (isRateLimitError(error)) {
+      res.status(200).json(getEstimatedMarketplaceResponse(brand, error.message));
       return;
     }
     res.status(isRateLimitError(error) ? 429 : 500).json(getMarketplaceErrorBody(error));
@@ -207,6 +237,49 @@ function getMarketplaceErrorBody(error) {
   }
 
   return { error: "Server error", message: error.message };
+}
+
+function getEstimatedMarketplaceResponse(brand, refreshError = "") {
+  const categories = getEstimatedCategories(brand);
+  const sampleSize = categories.reduce((sum, category) => sum + category.soldListings, 0);
+
+  return {
+    brand,
+    generatedAt: new Date().toISOString(),
+    source: "Estimated fallback data",
+    dataMode: "estimated",
+    lookbackDays,
+    sampleSize,
+    confidence: {
+      level: "low",
+      sampleSize,
+      note:
+        "Live eBay sold comps are temporarily rate limited. Use this only as directional guidance and verify eBay sold listings before buying.",
+    },
+    cache: {
+      status: "rate-limit-fallback",
+      refreshError,
+    },
+    categories,
+    tagReferences: [],
+  };
+}
+
+function getEstimatedCategories(brand) {
+  const seed = estimatedCategorySeeds[normalizeBrand(brand)] || defaultEstimatedCategorySeed;
+  return seed.map(([name, averageSalePrice, soldListings, itemTitles]) => ({
+    name,
+    averageSalePrice,
+    soldListings,
+    topItems: itemTitles.slice(0, 3).map((title, index) => ({
+      title: `${brand} ${title}`,
+      salePrice: Math.max(5, Math.round(averageSalePrice * (1.18 - index * 0.11))),
+      soldDate: "Estimated fallback",
+      imageUrl: "",
+      listingUrl: "",
+      itemId: "",
+    })),
+  }));
 }
 
 function normalizeBrand(brand) {

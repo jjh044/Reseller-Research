@@ -1019,6 +1019,7 @@ function renderReport(data) {
   const { totalSold, blendedAsp } = summarizeReportData(data);
   const maxScore = Math.max(...data.categories.map(categoryOpportunityScore));
   const categoriesByAsp = [...data.categories].sort((a, b) => b.averageSalePrice - a.averageSalePrice);
+  const isEstimated = data.dataMode === "estimated";
   const boloRows = data.categories
     .filter((category) => category.topItems.length > 0)
     .map((category) => ({ category, item: category.topItems[0] }))
@@ -1091,7 +1092,11 @@ function renderReport(data) {
       <div class="section-heading">
         <div>
           <p class="eyebrow bolo-heading">BOLO'S</p>
-          <p>Real sold-listing snapshots with the sold price shown up front.</p>
+          <p>${
+            isEstimated
+              ? "Estimated examples shown while live sold-listing screenshots are temporarily unavailable."
+              : "Real sold-listing snapshots with the sold price shown up front."
+          }</p>
         </div>
       </div>
       <div class="bolo-grid">

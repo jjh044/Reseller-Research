@@ -981,6 +981,10 @@ async function generateAiInsights(marketplaceData) {
 }
 
 async function getApiErrorMessage(response, fallbackMessage) {
+  if (response.status === 429) {
+    return "The live eBay sold-comps provider is rate limiting requests right now. Wait a minute and try again; cached reports will still load when available.";
+  }
+
   try {
     const details = await response.json();
     return details.message || details.error || fallbackMessage;

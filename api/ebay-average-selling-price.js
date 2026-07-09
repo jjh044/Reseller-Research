@@ -78,10 +78,9 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const apiResults = await getCategoryResponses(brand);
-    const tagReferences = await getTagReferences(brand);
+    const marketplaceData = await getMarketplaceData(brand);
 
-    const categories = apiResults.filter((category) => category.soldListings >= minimumCategoryComps);
+    const categories = marketplaceData.categories.filter((category) => category.soldListings >= minimumCategoryComps);
     if (categories.length === 0) {
       res.status(404).json({
         error: "No verified category comps found",
@@ -104,7 +103,7 @@ module.exports = async function handler(req, res) {
         ttlHours: Math.round(cacheTtlMilliseconds / 1000 / 60 / 60),
       },
       categories,
-      tagReferences,
+      tagReferences: marketplaceData.tagReferences,
     };
 
     responseCache.set(normalizeBrand(brand), {
@@ -127,7 +126,7 @@ module.exports = async function handler(req, res) {
       res.status(200).json(markCachedResponse(staleCache.responseData, "stale-cache", staleCache, error.message));
       return;
     }
-    res.status(500).json({ error: "Server error", message: error.message });
+    res.status(isRateLimitError(error) ? 429 : 500).json(getMarketplaceErrorBody(error));
   }
 };
 
@@ -152,38 +151,37 @@ function getCategoriesForBrand(brand) {
   return marketplaceCategories;
 }
 
-async function getCategoryResponses(brand) {
+async function getMarketplaceData(brand) {
   const categories = getCategoriesForBrand(brand);
   const data = await findCompletedItems(brand);
-  return categories.map((category) => mapCategoryResponse(brand, category, data));
+  const products = Array.isArray(data.products) ? data.products : [];
+  return {
+    categories: categories.map((category) => mapCategoryResponse(brand, category, data)),
+    tagReferences: getTagReferencesFromProducts(brand, products),
+  };
 }
 
-async function getTagReferences(brand) {
-  try {
-    const data = await findCompletedItems(`${brand} tag`);
-    const seenImages = new Set();
-    return (Array.isArray(data.products) ? data.products : [])
-      .filter(
-        (product) =>
-          titleMatchesBrand(product.title, brand) &&
-          /^https:\/\//i.test(String(product.image_url || "")),
-      )
-      .sort((a, b) => tagReferenceScore(b.title) - tagReferenceScore(a.title))
-      .filter((product) => {
-        if (seenImages.has(product.image_url)) return false;
-        seenImages.add(product.image_url);
-        return true;
-      })
-      .slice(0, 3)
-      .map((product) => ({
-        title: product.title,
-        imageUrl: product.image_url,
-        listingUrl: /^https:\/\//i.test(String(product.link || "")) ? product.link : "",
-      }));
-  } catch (error) {
-    console.warn(`Tag reference lookup unavailable for ${brand}:`, error.message);
-    return [];
-  }
+function getTagReferencesFromProducts(brand, products) {
+  const seenImages = new Set();
+  return products
+    .filter(
+      (product) =>
+        titleMatchesBrand(product.title, brand) &&
+        /^https:\/\//i.test(String(product.image_url || "")) &&
+        tagReferenceScore(product.title) > 0,
+    )
+    .sort((a, b) => tagReferenceScore(b.title) - tagReferenceScore(a.title))
+    .filter((product) => {
+      if (seenImages.has(product.image_url)) return false;
+      seenImages.add(product.image_url);
+      return true;
+    })
+    .slice(0, 3)
+    .map((product) => ({
+      title: product.title,
+      imageUrl: product.image_url,
+      listingUrl: /^https:\/\//i.test(String(product.link || "")) ? product.link : "",
+    }));
 }
 
 function tagReferenceScore(title) {
@@ -193,6 +191,22 @@ function tagReferenceScore(title) {
   if (/\b(tag|label|patch)\b/i.test(value)) score += 2;
   if (/\b(nwt|new with tag|new w\/tag|no tag|no size tag)\b/i.test(value)) score -= 3;
   return score;
+}
+
+function isRateLimitError(error) {
+  return /\b429\b|rate limit|too many requests|quota/i.test(String(error?.message || ""));
+}
+
+function getMarketplaceErrorBody(error) {
+  if (isRateLimitError(error)) {
+    return {
+      error: "Marketplace rate limit reached",
+      message:
+        "The live eBay sold-comps provider is rate limiting requests right now. Wait a minute and try again; cached reports will still load when available.",
+    };
+  }
+
+  return { error: "Server error", message: error.message };
 }
 
 function normalizeBrand(brand) {

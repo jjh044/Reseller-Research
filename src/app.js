@@ -1459,15 +1459,11 @@ function formatReportCurrency(value, reportData) {
 }
 
 function formatPercent(value) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return "unknown";
-  if (numericValue > 0 && numericValue < 0.001) return "<0.1%";
-
-  const maximumFractionDigits = numericValue > 0 && numericValue < 0.01 ? 2 : numericValue < 0.1 ? 1 : 0;
+  if (!Number.isFinite(Number(value))) return "unknown";
   return new Intl.NumberFormat("en-US", {
     style: "percent",
-    maximumFractionDigits,
-  }).format(numericValue);
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 function formatConfidence(value) {

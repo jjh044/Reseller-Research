@@ -1329,7 +1329,7 @@ function renderBoloCard(category, item) {
 
 function renderTagReferences(data) {
   const references = Array.isArray(data.tagReferences)
-    ? data.tagReferences.filter((item) => safeExternalUrl(item.imageUrl)).slice(0, 3)
+    ? data.tagReferences.filter((item) => isLikelyDisplayImageUrl(item.imageUrl)).slice(0, 3)
     : [];
   if (references.length === 0) return "";
 
@@ -1348,7 +1348,7 @@ function renderTagReferences(data) {
             const listingUrl = safeExternalUrl(item.listingUrl);
             const content = `
               <article class="tag-reference-card">
-                <img src="${escapeHtml(safeExternalUrl(item.imageUrl))}" alt="${escapeHtml(data.brand)} clothing tag reference ${index + 1}" loading="lazy" />
+                <img src="${escapeHtml(safeExternalUrl(item.imageUrl))}" alt="${escapeHtml(data.brand)} clothing tag reference ${index + 1}" loading="lazy" referrerpolicy="no-referrer" onload="handleTagReferenceImage(this)" onerror="handleTagReferenceImage(this, true)" />
                 <p>${escapeHtml(item.title)}</p>
               </article>
             `;
@@ -1365,6 +1365,33 @@ function renderTagReferences(data) {
 function safeExternalUrl(value) {
   const url = String(value || "").trim();
   return /^https:\/\//i.test(url) ? url : "";
+}
+
+function isLikelyDisplayImageUrl(value) {
+  const url = safeExternalUrl(value);
+  if (!url) return false;
+  if (/\.(?:svg|gif|avif|heic|ico)(?:[?#].*)?$/i.test(url)) return false;
+  if (/\b(?:avatar|profile|sprite|logo|icon|placeholder|blank|transparent|tracking|pixel)\b/i.test(url)) return false;
+  return (
+    /\.(?:jpg|jpeg|png|webp)(?:[?#].*)?$/i.test(url) ||
+    /\b(?:image|images|img|photo|photos|media|cdn|i\.ebayimg|pinimg|etsystatic|cloudfront)\b/i.test(url)
+  );
+}
+
+function handleTagReferenceImage(imageElement, forceInvalid = false) {
+  const card = imageElement.closest(".tag-reference-card");
+  if (!card) return;
+
+  const invalidImage =
+    forceInvalid || imageElement.naturalWidth < 80 || imageElement.naturalHeight < 80;
+  card.classList.toggle("is-invalid-image", invalidImage);
+  card.closest(".tag-reference-grid > a")?.classList.toggle("is-invalid-image-link", invalidImage);
+
+  const section = card.closest(".tag-reference-section");
+  if (!section) return;
+
+  const validCards = section.querySelectorAll(".tag-reference-card:not(.is-invalid-image)");
+  section.hidden = validCards.length === 0;
 }
 
 function getGrade(asp, soldComps) {

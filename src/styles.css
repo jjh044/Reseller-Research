@@ -1138,6 +1138,9 @@ dd {
 
 .tag-reference-card img {
   aspect-ratio: 4 / 3;
+  min-height: 190px;
+  background: #f5f3ed;
+  object-fit: contain;
 }
 
 .tag-reference-card p {
@@ -1146,6 +1149,12 @@ dd {
   font-size: 0.86rem;
   font-weight: 750;
   line-height: 1.4;
+}
+
+.tag-reference-card.is-invalid-image,
+.tag-reference-grid > a.is-invalid-image-link,
+.tag-reference-grid > a:has(.tag-reference-card.is-invalid-image) {
+  display: none;
 }
 
 .history-section {

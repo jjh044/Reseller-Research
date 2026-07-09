@@ -329,7 +329,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v5:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v6:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -618,6 +618,9 @@ function sanitizeTagReferences(references) {
 
 function isLikelyTagImageUrl(value) {
   const url = String(value || "").trim();
+  if (/\.(?:svg|gif|avif|heic|ico)(?:[?#].*)?$/i.test(url)) return false;
+  if (/\b(?:avatar|profile|sprite|logo|icon|placeholder|blank|transparent|tracking|pixel)\b/i.test(url)) return false;
+
   return (
     /^https:\/\//i.test(url) &&
     (/\.(?:jpg|jpeg|png|webp)(?:[?#].*)?$/i.test(url) ||

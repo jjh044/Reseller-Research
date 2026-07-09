@@ -1012,19 +1012,19 @@ async function generateMockAiInsights(marketplaceData) {
     .sort((a, b) => b.score - a.score);
 
   const strongest = scoredCategories.slice(0, 2);
-  const mostProven = [...marketplaceData.categories].sort((a, b) => getSellThroughRate(b) - getSellThroughRate(a))[0];
+  const mostProven = [...marketplaceData.categories].sort((a, b) => b.soldListings - a.soldListings)[0];
   const premium = [...marketplaceData.categories].sort((a, b) => b.averageSalePrice - a.averageSalePrice)[0];
   const strongestNames = strongest.map((category) => category.name).join(strongest.length > 1 ? " and " : "");
 
   return {
     headline: `${marketplaceData.brand} looks strongest in ${strongestNames}.`,
-    recommendation: `Prioritize ${strongest[0].name.toLowerCase()} when buy cost leaves room for a 3x-4x multiple. ${mostProven.name} has the strongest sell-through signal, while ${premium.name} creates the highest average gross sale opportunity.`,
+    recommendation: `Prioritize ${strongest[0].name.toLowerCase()} when buy cost leaves room for a 3x-4x multiple. ${mostProven.name} has the deepest sold-comp sample, while ${premium.name} creates the highest average gross sale opportunity.`,
     strongestCategories: strongest,
   };
 }
 
 function renderReport(data) {
-  const { totalSold, totalListed, blendedAsp, sellThroughRate } = summarizeReportData(data);
+  const { totalSold, blendedAsp } = summarizeReportData(data);
   const maxScore = Math.max(...data.categories.map(categoryOpportunityScore));
   const categoriesByAsp = [...data.categories].sort((a, b) => b.averageSalePrice - a.averageSalePrice);
   const isEstimated = data.dataMode === "estimated";
@@ -1049,11 +1049,7 @@ function renderReport(data) {
     <section class="kpi-grid" aria-label="Brand summary metrics">
       ${renderKpi("Blended ASP", formatReportCurrency(blendedAsp, data), "Average sold price across tracked clothing categories")}
       ${renderKpi("Verified categories", data.categories.length.toLocaleString(), "Categories supported by multiple matching sold listings")}
-      ${renderKpi(
-        "Sell-through",
-        formatPercent(sellThroughRate),
-        totalListed > 0 ? `${totalSold.toLocaleString()} sold / ${totalListed.toLocaleString()} listed` : "Active listing count unavailable",
-      )}
+      ${renderKpi("Sold comps", totalSold.toLocaleString(), "Completed listings in the analysis window")}
       ${renderKpi("Lookback", `${Number(data.lookbackDays || 90)} days`, "Completed-sale window used for this report")}
     </section>
 
@@ -1123,7 +1119,6 @@ function renderReport(data) {
 
 function summarizeReportData(data) {
   const totalSold = data.categories.reduce((sum, category) => sum + category.soldListings, 0);
-  const totalListed = data.categories.reduce((sum, category) => sum + Number(category.listedListings || 0), 0);
   const blendedAsp = Math.round(
     data.categories.reduce(
       (sum, category) => sum + category.averageSalePrice * category.soldListings,
@@ -1133,9 +1128,7 @@ function summarizeReportData(data) {
 
   return {
     totalSold,
-    totalListed,
     blendedAsp,
-    sellThroughRate: totalListed > 0 ? totalSold / totalListed : null,
   };
 }
 
@@ -1160,10 +1153,7 @@ function renderSourcingCard(label, value, detail) {
 }
 
 function buildSourcingGuidance(marketplaceData) {
-  const { blendedAsp, totalSold, sellThroughRate } = summarizeReportData(marketplaceData);
-  const hasSellThroughRate = Number.isFinite(Number(sellThroughRate));
-  const strongVelocity = hasSellThroughRate ? sellThroughRate >= 0.2 : totalSold >= 10;
-  const selectiveVelocity = hasSellThroughRate ? sellThroughRate >= 0.08 : totalSold >= 4;
+  const { blendedAsp, totalSold } = summarizeReportData(marketplaceData);
   const feeRate = 0.15;
   const shippingBuffer = 8;
   const targetMargin = marketplaceData.confidence?.level === "low" ? 0.34 : 0.42;
@@ -1174,9 +1164,9 @@ function buildSourcingGuidance(marketplaceData) {
   const decision =
     marketplaceData.confidence?.level === "low"
       ? "Watch"
-      : blendedAsp >= 55 && strongVelocity
+      : blendedAsp >= 55 && totalSold >= 10
         ? "Buy"
-        : blendedAsp >= 30 && selectiveVelocity
+        : blendedAsp >= 30 && totalSold >= 4
           ? "Selective buy"
           : "Pass";
   const strongest = [...marketplaceData.categories].sort(
@@ -1187,11 +1177,11 @@ function buildSourcingGuidance(marketplaceData) {
     decision,
     decisionReason:
       decision === "Buy"
-        ? `${strongest.name} has the strongest price and sell-through signal.`
+        ? `${strongest.name} has the strongest price and sold-comp depth.`
         : decision === "Selective buy"
           ? `Only buy stronger ${strongest.name.toLowerCase()} pieces below the max buy target.`
           : decision === "Watch"
-            ? "Confidence is thin, so verify sell-through before sourcing."
+            ? "Confidence is thin, so verify sold comps before sourcing."
             : "Price or velocity is not strong enough for routine sourcing.",
     maxBuyPrice,
     profitRange: `${formatCurrency(lowProfit)}-${formatCurrency(highProfit)}`,
@@ -1201,11 +1191,7 @@ function buildSourcingGuidance(marketplaceData) {
 
 function getAvoidNotes(marketplaceData) {
   const lowCategories = marketplaceData.categories
-    .filter((category) => {
-      const sellThroughRate = getSellThroughRate(category);
-      const lowSellThrough = Number.isFinite(Number(sellThroughRate)) ? sellThroughRate < 0.08 : category.soldListings < 3;
-      return lowSellThrough || category.averageSalePrice < 30;
-    })
+    .filter((category) => category.soldListings < 3 || category.averageSalePrice < 30)
     .map((category) => category.name.toLowerCase())
     .slice(0, 2);
   const categoryNote = lowCategories.length ? `Be careful with ${lowCategories.join(" and ")}.` : "";
@@ -1293,8 +1279,8 @@ function renderCategory(category, maxScore, strongestCategories, reportData) {
           <dd>${formatReportCurrency(category.averageSalePrice, reportData)}</dd>
         </div>
         <div>
-          <dt>STR</dt>
-          <dd>${formatPercent(getSellThroughRate(category))}</dd>
+          <dt>Sold comps</dt>
+          <dd>${Number(category.soldListings || 0).toLocaleString()}</dd>
         </div>
       </dl>
       <div class="meter" aria-label="${category.name} opportunity score ${strength}%">
@@ -1376,9 +1362,13 @@ function getGrade(asp, soldComps) {
   return "C";
 }
 
+function categoryOpportunityScore(category) {
+  return Number(category.averageSalePrice || 0) * Math.log2(Number(category.soldListings || 0) + 1);
+}
+
 function normalizeReportCategories(reportData) {
   if (!reportData || !Array.isArray(reportData.categories)) return reportData;
-  const categories = selectTopResultCategories(reportData.categories.map(normalizeCategorySellThrough));
+  const categories = selectTopResultCategories(reportData.categories);
   const sampleSize = categories.reduce((sum, category) => sum + Number(category.soldListings || 0), 0);
 
   return {
@@ -1394,23 +1384,6 @@ function normalizeReportCategories(reportData) {
   };
 }
 
-function normalizeCategorySellThrough(category) {
-  const soldListings = Number(category.soldListings || 0);
-  const listedListings = Number(category.listedListings);
-  const sellThroughRate = Number(category.sellThroughRate);
-  const hasListedListings = Number.isFinite(listedListings) && listedListings > 0;
-
-  return {
-    ...category,
-    listedListings: hasListedListings ? listedListings : category.listedListings ?? null,
-    sellThroughRate: Number.isFinite(sellThroughRate)
-      ? sellThroughRate
-      : hasListedListings
-        ? soldListings / listedListings
-        : null,
-  };
-}
-
 function selectTopResultCategories(categories) {
   return [...categories]
     .sort((a, b) => {
@@ -1421,22 +1394,6 @@ function selectTopResultCategories(categories) {
       return Number(b.soldListings || 0) - Number(a.soldListings || 0);
     })
     .slice(0, maximumResultCategories);
-}
-
-function categoryOpportunityScore(category) {
-  const sellThroughRate = getSellThroughRate(category);
-  const velocity = Number.isFinite(sellThroughRate)
-    ? sellThroughRate * Math.log2(Number(category.soldListings || 0) + 1)
-    : Math.log2(Number(category.soldListings || 0) + 1);
-  return Number(category.averageSalePrice || 0) * velocity;
-}
-
-function getSellThroughRate(category) {
-  const sellThroughRate = Number(category?.sellThroughRate);
-  if (Number.isFinite(sellThroughRate)) return sellThroughRate;
-  const soldListings = Number(category?.soldListings || 0);
-  const listedListings = Number(category?.listedListings || 0);
-  return listedListings > 0 ? soldListings / listedListings : null;
 }
 
 function getBrandAdjustment(brand) {
@@ -1459,7 +1416,6 @@ function formatReportCurrency(value, reportData) {
 }
 
 function formatPercent(value) {
-  if (!Number.isFinite(Number(value))) return "unknown";
   return new Intl.NumberFormat("en-US", {
     style: "percent",
     maximumFractionDigits: 0,

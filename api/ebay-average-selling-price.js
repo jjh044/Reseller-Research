@@ -137,7 +137,7 @@ module.exports = async function handler(req, res) {
       tagReferences: marketplaceData.tagReferences,
     };
 
-    responseCache.set(cacheKey, {
+    responseCache.set(normalizeBrand(brand), {
       expiresAt: Date.now() + cacheTtlMilliseconds,
       responseBody,
     });
@@ -166,7 +166,7 @@ module.exports = async function handler(req, res) {
 };
 
 function getCachedResponse(brand) {
-  const cacheKey = getMarketplaceCacheKey(brand);
+  const cacheKey = normalizeBrand(brand);
   const cached = responseCache.get(cacheKey);
   if (!cached || cached.expiresAt <= Date.now()) {
     responseCache.delete(cacheKey);
@@ -348,7 +348,7 @@ function buildActiveListingQuery(brand, category) {
 }
 
 function withSellThroughRate(category, listedListings, soldListingsOverride = null) {
-  const soldResultCount = Number.isFinite(Number(soldListingsOverride))
+  const soldListings = Number.isFinite(Number(soldListingsOverride))
     ? Number(soldListingsOverride)
     : Number(category.soldListings || 0);
   const activeListings = Number(listedListings);
@@ -356,9 +356,10 @@ function withSellThroughRate(category, listedListings, soldListingsOverride = nu
 
   return {
     ...category,
-    soldResultCount,
+    soldListings,
+    soldSampleSize: Number(category.soldListings || 0),
     listedListings: hasListedListings ? activeListings : null,
-    sellThroughRate: hasListedListings ? soldResultCount / activeListings : null,
+    sellThroughRate: hasListedListings ? soldListings / activeListings : null,
   };
 }
 
@@ -432,8 +433,6 @@ function parseEbayResultCount(html) {
   const patterns = [
     /"totalCount"\s*:\s*"?([\d,]+)"?/i,
     /"resultCount"\s*:\s*"?([\d,]+)"?/i,
-    /([\d,]+)\s+sold\b/i,
-    /([\d,]+)\s+sold\s+results?/i,
     /([\d,]+)\s+results?\s+for/i,
     /([\d,]+)\s+results?/i,
   ];
@@ -459,7 +458,7 @@ function normalizeBrand(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v8:${normalizeBrand(brand)}:${lookbackDays}`;
+  return `marketplace:v7:${normalizeBrand(brand)}:${lookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {

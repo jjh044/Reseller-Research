@@ -1024,7 +1024,7 @@ async function generateMockAiInsights(marketplaceData) {
 }
 
 function renderReport(data) {
-  const { totalSold, totalListed, blendedAsp, sellThroughRate } = summarizeReportData(data);
+  const { totalSold, totalSoldResultCount, totalListed, blendedAsp, sellThroughRate } = summarizeReportData(data);
   const maxScore = Math.max(...data.categories.map(categoryOpportunityScore));
   const categoriesByAsp = [...data.categories].sort((a, b) => b.averageSalePrice - a.averageSalePrice);
   const isEstimated = data.dataMode === "estimated";
@@ -1052,7 +1052,9 @@ function renderReport(data) {
       ${renderKpi(
         "Sell-through",
         formatPercent(sellThroughRate),
-        totalListed > 0 ? `${totalSold.toLocaleString()} sold / ${totalListed.toLocaleString()} listed` : "Active listing count unavailable",
+        totalListed > 0
+          ? `${totalSoldResultCount.toLocaleString()} sold / ${totalListed.toLocaleString()} listed`
+          : "Active listing count unavailable",
       )}
       ${renderKpi("Lookback", `${Number(data.lookbackDays || 90)} days`, "Completed-sale window used for this report")}
     </section>
@@ -1123,6 +1125,10 @@ function renderReport(data) {
 
 function summarizeReportData(data) {
   const totalSold = data.categories.reduce((sum, category) => sum + category.soldListings, 0);
+  const totalSoldResultCount = data.categories.reduce(
+    (sum, category) => sum + Number(category.soldResultCount ?? category.soldListings ?? 0),
+    0,
+  );
   const totalListed = data.categories.reduce((sum, category) => sum + Number(category.listedListings || 0), 0);
   const blendedAsp = Math.round(
     data.categories.reduce(
@@ -1133,9 +1139,10 @@ function summarizeReportData(data) {
 
   return {
     totalSold,
+    totalSoldResultCount,
     totalListed,
     blendedAsp,
-    sellThroughRate: totalListed > 0 ? totalSold / totalListed : null,
+    sellThroughRate: totalListed > 0 ? totalSoldResultCount / totalListed : null,
   };
 }
 
@@ -1396,17 +1403,20 @@ function normalizeReportCategories(reportData) {
 
 function normalizeCategorySellThrough(category) {
   const soldListings = Number(category.soldListings || 0);
+  const soldResultCount = Number(category.soldResultCount);
   const listedListings = Number(category.listedListings);
   const sellThroughRate = Number(category.sellThroughRate);
   const hasListedListings = Number.isFinite(listedListings) && listedListings > 0;
+  const strSoldCount = Number.isFinite(soldResultCount) ? soldResultCount : soldListings;
 
   return {
     ...category,
+    soldResultCount: Number.isFinite(soldResultCount) ? soldResultCount : category.soldResultCount,
     listedListings: hasListedListings ? listedListings : category.listedListings ?? null,
     sellThroughRate: Number.isFinite(sellThroughRate)
       ? sellThroughRate
       : hasListedListings
-        ? soldListings / listedListings
+        ? strSoldCount / listedListings
         : null,
   };
 }
@@ -1434,7 +1444,7 @@ function categoryOpportunityScore(category) {
 function getSellThroughRate(category) {
   const sellThroughRate = Number(category?.sellThroughRate);
   if (Number.isFinite(sellThroughRate)) return sellThroughRate;
-  const soldListings = Number(category?.soldListings || 0);
+  const soldListings = Number(category?.soldResultCount ?? category?.soldListings ?? 0);
   const listedListings = Number(category?.listedListings || 0);
   return listedListings > 0 ? soldListings / listedListings : null;
 }

@@ -296,7 +296,7 @@ async function handleEbayAverageSellingPrice(url, res) {
       tagReferences: marketplaceData.tagReferences,
     };
 
-    ebayResponseCache.set(normalizeBrand(brand), {
+    ebayResponseCache.set(cacheKey, {
       expiresAt: Date.now() + cacheTtlMilliseconds,
       responseBody,
     });
@@ -317,7 +317,7 @@ async function handleEbayAverageSellingPrice(url, res) {
 }
 
 function getCachedEbayResponse(brand) {
-  const cacheKey = normalizeBrand(brand);
+  const cacheKey = getMarketplaceCacheKey(brand);
   const cached = ebayResponseCache.get(cacheKey);
   if (!cached || cached.expiresAt <= Date.now()) {
     ebayResponseCache.delete(cacheKey);
@@ -328,7 +328,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v7:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v8:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -594,7 +594,7 @@ function buildActiveListingQuery(brand, category) {
 }
 
 function withSellThroughRate(category, listedListings, soldListingsOverride = null) {
-  const soldListings = Number.isFinite(Number(soldListingsOverride))
+  const soldResultCount = Number.isFinite(Number(soldListingsOverride))
     ? Number(soldListingsOverride)
     : Number(category.soldListings || 0);
   const activeListings = Number(listedListings);
@@ -602,10 +602,9 @@ function withSellThroughRate(category, listedListings, soldListingsOverride = nu
 
   return {
     ...category,
-    soldListings,
-    soldSampleSize: Number(category.soldListings || 0),
+    soldResultCount,
     listedListings: hasListedListings ? activeListings : null,
-    sellThroughRate: hasListedListings ? soldListings / activeListings : null,
+    sellThroughRate: hasListedListings ? soldResultCount / activeListings : null,
   };
 }
 
@@ -679,6 +678,8 @@ function parseEbayResultCount(html) {
   const patterns = [
     /"totalCount"\s*:\s*"?([\d,]+)"?/i,
     /"resultCount"\s*:\s*"?([\d,]+)"?/i,
+    /([\d,]+)\s+sold\b/i,
+    /([\d,]+)\s+sold\s+results?/i,
     /([\d,]+)\s+results?\s+for/i,
     /([\d,]+)\s+results?/i,
   ];

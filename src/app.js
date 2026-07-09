@@ -54,7 +54,6 @@ const captureCanvas = document.querySelector("#capture-canvas");
 const captureButton = document.querySelector("#capture-button");
 const cameraFallback = document.querySelector("#camera-fallback");
 const cameraMessage = document.querySelector("#camera-message");
-const enableCameraButton = document.querySelector("#enable-camera-button");
 const captureStrip = document.querySelector("#capture-strip");
 const scannerCount = document.querySelector("#scanner-count");
 const brandResearchButton = document.querySelector("#brand-research-button");
@@ -78,6 +77,7 @@ let currentBatchBrands = [];
 let quickDecisionReports = [];
 let quickDecisionFailures = [];
 let cameraStream = null;
+let cameraStartPromise = null;
 let clerk = null;
 
 const initialBrand = new URLSearchParams(window.location.search).get("brand");
@@ -146,29 +146,29 @@ brandResearchButton.addEventListener("click", async () => {
   await researchCapturedLabels();
 });
 
-enableCameraButton.addEventListener("click", startScannerCamera);
-
 function prepareScannerCamera() {
-  const isSupported = Boolean(navigator.mediaDevices?.getUserMedia);
-  showCameraFallback(
-    isSupported
-      ? "Enable the camera to scan labels"
-      : "Live camera is not supported here. Take or upload a photo instead.",
-    isSupported
-  );
-}
-
-async function startScannerCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
-    showCameraFallback("Live camera is not supported here. Take or upload a photo instead.", false);
+    showCameraFallback("Live camera is not supported here. Take or upload a photo instead.");
     return;
   }
 
-  enableCameraButton.disabled = true;
-  enableCameraButton.textContent = "Opening camera...";
+  cameraFallback.hidden = true;
+  scannerVideo.hidden = false;
+  labelStatus.textContent = "Opening camera";
+  startScannerCamera();
+}
+
+async function startScannerCamera() {
+  if (cameraStream) return cameraStream;
+  if (cameraStartPromise) return cameraStartPromise;
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showCameraFallback("Live camera is not supported here. Take or upload a photo instead.");
+    return null;
+  }
+
   labelStatus.textContent = "Requesting camera";
 
-  try {
+  cameraStartPromise = (async () => {
     const camera = await openPreferredCamera();
     cameraStream = camera.stream;
     scannerVideo.srcObject = cameraStream;
@@ -178,6 +178,11 @@ async function startScannerCamera() {
     captureButton.classList.remove("is-upload");
     captureButton.setAttribute("aria-label", "Capture label");
     labelStatus.textContent = camera.facing === "user" ? "Webcam ready" : "Ready";
+    return cameraStream;
+  })();
+
+  try {
+    return await cameraStartPromise;
   } catch (error) {
     console.warn("Camera unavailable:", error);
     const permissionBlocked = error.name === "NotAllowedError" || error.name === "SecurityError";
@@ -185,11 +190,10 @@ async function startScannerCamera() {
       permissionBlocked
         ? "Camera permission is blocked. Allow it in browser settings, or take a photo below."
         : "No live camera was found. Take or upload a photo instead.",
-      true
     );
+    return null;
   } finally {
-    enableCameraButton.disabled = false;
-    enableCameraButton.textContent = "Enable camera";
+    cameraStartPromise = null;
   }
 }
 
@@ -259,10 +263,9 @@ async function openRearCamera() {
   });
 }
 
-function showCameraFallback(message, canRetry) {
+function showCameraFallback(message) {
   cameraFallback.hidden = false;
   cameraMessage.textContent = message;
-  enableCameraButton.hidden = !canRetry;
   scannerVideo.hidden = true;
   captureButton.classList.add("is-upload");
   captureButton.setAttribute("aria-label", "Take or upload label photo");
@@ -756,6 +759,10 @@ function activateTab(tabName) {
   tabPanels.forEach((tabPanel) => {
     tabPanel.classList.toggle("is-active", tabPanel.dataset.tabPanel === tabName);
   });
+
+  if (tabName === "home" && !cameraStream) {
+    startScannerCamera();
+  }
 }
 
 async function saveBrandFile(reportData) {

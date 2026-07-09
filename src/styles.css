@@ -1151,10 +1151,26 @@ dd {
   line-height: 1.4;
 }
 
-.tag-reference-card.is-invalid-image,
-.tag-reference-grid > a.is-invalid-image-link,
-.tag-reference-grid > a:has(.tag-reference-card.is-invalid-image) {
+.tag-image-fallback {
   display: none;
+  min-height: 190px;
+  padding: 22px;
+  place-items: center;
+  text-align: center;
+  color: var(--muted);
+  background: #f5f3ed;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.tag-reference-card.is-invalid-image img {
+  display: none;
+}
+
+.tag-reference-card.is-invalid-image .tag-image-fallback {
+  display: grid;
 }
 
 .history-section {

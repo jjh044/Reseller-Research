@@ -363,7 +363,6 @@ function sanitizeTagReferences(references) {
     }))
     .filter(
       (reference) =>
-        /^https:\/\//i.test(reference.listingUrl) &&
         isLikelyTagImageUrl(reference.imageUrl) &&
         !seenImages.has(reference.imageUrl) &&
         seenImages.add(reference.imageUrl),
@@ -394,7 +393,7 @@ function normalizeBrand(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v7:${normalizeBrand(brand)}:${lookbackDays}`;
+  return `marketplace:v8:${normalizeBrand(brand)}:${lookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {

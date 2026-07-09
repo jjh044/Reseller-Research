@@ -1346,9 +1346,11 @@ function renderTagReferences(data) {
         ${references
           .map((item, index) => {
             const listingUrl = safeExternalUrl(item.listingUrl);
+            const imageUrl = getTagReferenceImageUrl(item.imageUrl);
             const content = `
               <article class="tag-reference-card">
-                <img src="${escapeHtml(safeExternalUrl(item.imageUrl))}" alt="${escapeHtml(data.brand)} clothing tag reference ${index + 1}" loading="lazy" referrerpolicy="no-referrer" onload="handleTagReferenceImage(this)" onerror="handleTagReferenceImage(this, true)" />
+                <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(data.brand)} clothing tag reference ${index + 1}" loading="lazy" onload="handleTagReferenceImage(this)" onerror="handleTagReferenceImage(this, true)" />
+                <div class="tag-image-fallback" aria-hidden="true">Tag image unavailable. Open the source reference.</div>
                 <p>${escapeHtml(item.title)}</p>
               </article>
             `;
@@ -1365,6 +1367,11 @@ function renderTagReferences(data) {
 function safeExternalUrl(value) {
   const url = String(value || "").trim();
   return /^https:\/\//i.test(url) ? url : "";
+}
+
+function getTagReferenceImageUrl(value) {
+  const url = safeExternalUrl(value);
+  return url ? `/api/tag-image?url=${encodeURIComponent(url)}` : "";
 }
 
 function isLikelyDisplayImageUrl(value) {
@@ -1385,13 +1392,6 @@ function handleTagReferenceImage(imageElement, forceInvalid = false) {
   const invalidImage =
     forceInvalid || imageElement.naturalWidth < 80 || imageElement.naturalHeight < 80;
   card.classList.toggle("is-invalid-image", invalidImage);
-  card.closest(".tag-reference-grid > a")?.classList.toggle("is-invalid-image-link", invalidImage);
-
-  const section = card.closest(".tag-reference-section");
-  if (!section) return;
-
-  const validCards = section.querySelectorAll(".tag-reference-card:not(.is-invalid-image)");
-  section.hidden = validCards.length === 0;
 }
 
 function getGrade(asp, soldComps) {

@@ -119,6 +119,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/tag-image") {
+      await handleTagImage(url, res);
+      return;
+    }
+
     serveStatic(url.pathname, res);
   } catch (error) {
     sendJson(res, 500, { error: "Server error", message: error.message });
@@ -241,6 +246,48 @@ async function handleConfig(req, res) {
   });
 }
 
+async function handleTagImage(url, res) {
+  const imageUrl = String(url.searchParams.get("url") || "").trim();
+  const validationError = getProxyImageUrlError(imageUrl);
+
+  if (validationError) {
+    sendText(res, 400, validationError);
+    return;
+  }
+
+  try {
+    const imageResponse = await fetch(imageUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; ResellerResearchAI/1.0; +https://reseller-research.vercel.app)",
+        Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!imageResponse.ok) {
+      sendText(res, imageResponse.status, "Image unavailable");
+      return;
+    }
+
+    const contentType = String(imageResponse.headers.get("content-type") || "image/jpeg").toLowerCase();
+    if (!contentType.startsWith("image/")) {
+      sendText(res, 415, "URL did not return an image");
+      return;
+    }
+
+    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+      "Content-Length": imageBuffer.length,
+    });
+    res.end(imageBuffer);
+  } catch (error) {
+    sendText(res, 502, "Could not load tag image");
+  }
+}
+
 async function handleEbayAverageSellingPrice(url, res) {
   if (!RAPIDAPI_KEY) {
     sendJson(res, 500, { error: "Missing RAPIDAPI_KEY environment variable" });
@@ -329,7 +376,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v7:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v8:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -608,7 +655,6 @@ function sanitizeTagReferences(references) {
     }))
     .filter(
       (reference) =>
-        /^https:\/\//i.test(reference.listingUrl) &&
         isLikelyTagImageUrl(reference.imageUrl) &&
         !seenImages.has(reference.imageUrl) &&
         seenImages.add(reference.imageUrl),
@@ -626,6 +672,31 @@ function isLikelyTagImageUrl(value) {
     (/\.(?:jpg|jpeg|png|webp)(?:[?#].*)?$/i.test(url) ||
       /\b(?:image|images|img|photo|photos|media|cdn|i\.ebayimg|pinimg|etsystatic|cloudfront)\b/i.test(url))
   );
+}
+
+function getProxyImageUrlError(value) {
+  if (!value || value.length > 2000) return "Missing image URL";
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return "Invalid image URL";
+  }
+
+  if (parsed.protocol !== "https:") return "Only HTTPS image URLs are supported";
+  const hostname = parsed.hostname.toLowerCase();
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname === "::1"
+  ) {
+    return "Local image URLs are not supported";
+  }
+
+  return "";
 }
 
 function normalizeBrand(brand) {

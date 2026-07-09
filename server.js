@@ -11,6 +11,8 @@ const PORT = Number(process.env.PORT || 3000);
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const OPENAI_SEARCH_MODEL = process.env.OPENAI_SEARCH_MODEL || OPENAI_MODEL;
+const OPENAI_WEB_SEARCH_TOOL_TYPE = process.env.OPENAI_WEB_SEARCH_TOOL_TYPE || "web_search_preview";
 const ROOT = __dirname;
 
 const categoryProfiles = {
@@ -327,7 +329,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v4:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v5:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -434,43 +436,10 @@ function getCategoriesForBrand(brand) {
 async function getMarketplaceData(brand) {
   const categories = getCategoriesForBrand(brand);
   const data = await findCompletedItems(brand);
-  const products = Array.isArray(data.products) ? data.products : [];
   return {
     categories: categories.map((category) => mapCategoryResponse(brand, category, data)),
-    tagReferences: getTagReferencesFromProducts(brand, products),
+    tagReferences: await getOpenAiTagReferences(brand),
   };
-}
-
-function getTagReferencesFromProducts(brand, products) {
-  const seenImages = new Set();
-  return products
-    .filter(
-      (product) =>
-        titleMatchesBrand(product.title, brand) &&
-        /^https:\/\//i.test(String(product.image_url || "")) &&
-        tagReferenceScore(product.title) > 0,
-    )
-    .sort((a, b) => tagReferenceScore(b.title) - tagReferenceScore(a.title))
-    .filter((product) => {
-      if (seenImages.has(product.image_url)) return false;
-      seenImages.add(product.image_url);
-      return true;
-    })
-    .slice(0, 3)
-    .map((product) => ({
-      title: product.title,
-      imageUrl: product.image_url,
-      listingUrl: /^https:\/\//i.test(String(product.link || "")) ? product.link : "",
-    }));
-}
-
-function tagReferenceScore(title) {
-  const value = String(title || "");
-  let score = 0;
-  if (/\b(vintage|old tag|older tag|tag label|single stitch|made in usa)\b/i.test(value)) score += 4;
-  if (/\b(tag|label|patch)\b/i.test(value)) score += 2;
-  if (/\b(nwt|new with tag|new w\/tag|no tag|no size tag)\b/i.test(value)) score -= 3;
-  return score;
 }
 
 function isRateLimitError(error) {
@@ -564,6 +533,96 @@ function selectTopResultCategories(categories) {
 
 function getCategoryOpportunityScore(category) {
   return Number(category.averageSalePrice || 0) * Math.log2(Number(category.soldListings || 0) + 1);
+}
+
+async function getOpenAiTagReferences(brand) {
+  if (!OPENAI_API_KEY) return [];
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      references: {
+        type: "array",
+        maxItems: 3,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            title: { type: "string" },
+            imageUrl: { type: "string" },
+            sourceUrl: { type: "string" },
+          },
+          required: ["title", "imageUrl", "sourceUrl"],
+        },
+      },
+    },
+    required: ["references"],
+  };
+
+  const payload = {
+    model: OPENAI_SEARCH_MODEL,
+    tools: [{ type: OPENAI_WEB_SEARCH_TOOL_TYPE }],
+    input: [
+      {
+        role: "system",
+        content:
+          "You find visual clothing label references for resellers. Return only direct image URLs that show actual neck labels, care tags, waist tags, or brand tags. Do not return product photos, outfit photos, stock photos, BOLO listings, or logo-only graphics.",
+      },
+      {
+        role: "user",
+        content: `Find up to 3 direct image URLs for actual ${brand} clothing brand tags or labels. Search phrases like "${brand} brand tags", "${brand} clothing label", "${brand} vintage tag", and "${brand} neck label". Return a source page URL for each image.`,
+      },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "brand_tag_references",
+        strict: true,
+        schema,
+      },
+    },
+    max_output_tokens: 700,
+  };
+
+  try {
+    const response = await postJson("api.openai.com", "/v1/responses", payload, {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    });
+    const parsed = JSON.parse(extractResponseText(response));
+    return sanitizeTagReferences(parsed.references);
+  } catch (error) {
+    console.warn(`OpenAI tag reference lookup unavailable for ${brand}:`, error.message);
+    return [];
+  }
+}
+
+function sanitizeTagReferences(references) {
+  const seenImages = new Set();
+  return (Array.isArray(references) ? references : [])
+    .map((reference) => ({
+      title: String(reference.title || "Brand tag reference").trim(),
+      imageUrl: String(reference.imageUrl || "").trim(),
+      listingUrl: String(reference.sourceUrl || "").trim(),
+    }))
+    .filter(
+      (reference) =>
+        /^https:\/\//i.test(reference.listingUrl) &&
+        isLikelyTagImageUrl(reference.imageUrl) &&
+        !seenImages.has(reference.imageUrl) &&
+        seenImages.add(reference.imageUrl),
+    )
+    .slice(0, 3);
+}
+
+function isLikelyTagImageUrl(value) {
+  const url = String(value || "").trim();
+  return (
+    /^https:\/\//i.test(url) &&
+    (/\.(?:jpg|jpeg|png|webp)(?:[?#].*)?$/i.test(url) ||
+      /\b(?:image|images|img|photo|photos|media|cdn|i\.ebayimg|pinimg|etsystatic|cloudfront)\b/i.test(url))
+  );
 }
 
 function normalizeBrand(brand) {

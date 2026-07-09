@@ -1339,7 +1339,7 @@ function renderTagReferences(data) {
         <div>
           <p class="eyebrow section-title">Tags</p>
           <h2>Labels to look for</h2>
-          <p>Visual references from eBay listings. Compare the full tag, stitching, and typography before sourcing.</p>
+          <p>Visual tag references sourced separately from web results. Compare the full tag, stitching, and typography before sourcing.</p>
         </div>
       </div>
       <div class="tag-reference-grid">

@@ -330,11 +330,17 @@ function getCategoryOpportunityScore(category) {
 async function enrichCategoriesWithSellThroughRates(brand, categories) {
   const enrichedCategories = await Promise.all(
     categories.map(async (category) => {
-      const listedListings = await getActiveListingCount(`${brand} ${category.name}`);
+      const listedListings = await getActiveListingCount(buildActiveListingQuery(brand, category));
       return withSellThroughRate(category, listedListings);
     }),
   );
   return enrichedCategories;
+}
+
+function buildActiveListingQuery(brand, category) {
+  const cleanBrand = String(brand || "").trim().replace(/"/g, "");
+  const cleanCategory = String(category?.name || "").trim();
+  return `"${cleanBrand}" ${cleanCategory}`.trim();
 }
 
 function withSellThroughRate(category, listedListings) {
@@ -435,7 +441,7 @@ function normalizeBrand(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v5:${normalizeBrand(brand)}:${lookbackDays}`;
+  return `marketplace:v6:${normalizeBrand(brand)}:${lookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {

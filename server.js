@@ -328,7 +328,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v6:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v7:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -576,8 +576,12 @@ function getCategoryOpportunityScore(category) {
 async function enrichCategoriesWithSellThroughRates(brand, categories) {
   const enrichedCategories = await Promise.all(
     categories.map(async (category) => {
-      const listedListings = await getActiveListingCount(buildActiveListingQuery(brand, category));
-      return withSellThroughRate(category, listedListings);
+      const searchQuery = buildActiveListingQuery(brand, category);
+      const [soldListings, listedListings] = await Promise.all([
+        getEbaySearchResultCount(searchQuery, { sold: true }),
+        getEbaySearchResultCount(searchQuery, { sold: false }),
+      ]);
+      return withSellThroughRate(category, listedListings, soldListings);
     }),
   );
   return enrichedCategories;
@@ -589,30 +593,43 @@ function buildActiveListingQuery(brand, category) {
   return `"${cleanBrand}" ${cleanCategory}`.trim();
 }
 
-function withSellThroughRate(category, listedListings) {
-  const soldListings = Number(category.soldListings || 0);
+function withSellThroughRate(category, listedListings, soldListingsOverride = null) {
+  const soldListings = Number.isFinite(Number(soldListingsOverride))
+    ? Number(soldListingsOverride)
+    : Number(category.soldListings || 0);
   const activeListings = Number(listedListings);
   const hasListedListings = Number.isFinite(activeListings) && activeListings > 0;
 
   return {
     ...category,
+    soldListings,
+    soldSampleSize: Number(category.soldListings || 0),
     listedListings: hasListedListings ? activeListings : null,
     sellThroughRate: hasListedListings ? soldListings / activeListings : null,
   };
 }
 
-async function getActiveListingCount(query) {
+async function getEbaySearchResultCount(query, options = {}) {
   try {
-    const html = await getEbaySearchHtml(query);
+    const html = await getEbaySearchHtml(query, options);
     return parseEbayResultCount(html);
   } catch (error) {
-    console.warn(`Could not load active eBay listing count for "${query}":`, error.message);
+    const resultType = options.sold ? "sold" : "active";
+    console.warn(`Could not load ${resultType} eBay listing count for "${query}":`, error.message);
     return null;
   }
 }
 
-function getEbaySearchHtml(query, redirectCount = 0) {
-  const searchPath = `/sch/i.html?_nkw=${encodeURIComponent(query)}&_sacat=0`;
+function getEbaySearchHtml(query, options = {}, redirectCount = 0) {
+  const searchParams = new URLSearchParams({
+    _nkw: query,
+    _sacat: "0",
+  });
+  if (options.sold) {
+    searchParams.set("LH_Complete", "1");
+    searchParams.set("LH_Sold", "1");
+  }
+  const searchPath = `/sch/i.html?${searchParams.toString()}`;
   return new Promise((resolve, reject) => {
     const request = https.get(
       {
@@ -634,7 +651,7 @@ function getEbaySearchHtml(query, redirectCount = 0) {
         ) {
           response.resume();
           const redirectUrl = new URL(response.headers.location, "https://www.ebay.com");
-          getEbaySearchHtml(redirectUrl.searchParams.get("_nkw") || query, redirectCount + 1)
+          getEbaySearchHtml(redirectUrl.searchParams.get("_nkw") || query, options, redirectCount + 1)
             .then(resolve)
             .catch(reject);
           return;

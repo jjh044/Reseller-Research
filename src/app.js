@@ -1154,11 +1154,9 @@ function renderSourcingCard(label, value, detail) {
 
 function buildSourcingGuidance(marketplaceData) {
   const { blendedAsp, totalSold } = summarizeReportData(marketplaceData);
-  const feeRate = 0.15;
   const shippingBuffer = 8;
   const targetMargin = marketplaceData.confidence?.level === "low" ? 0.34 : 0.42;
-  const expectedNet = Math.max(0, blendedAsp * (1 - feeRate) - shippingBuffer);
-  const maxBuyPrice = Math.max(3, Math.floor(expectedNet * targetMargin));
+  const maxBuyPrice = calculateMaxBuyPrice(blendedAsp, targetMargin);
   const lowProfit = Math.max(0, Math.round(blendedAsp * 0.72 - maxBuyPrice - shippingBuffer));
   const highProfit = Math.max(lowProfit + 4, Math.round(blendedAsp * 0.86 - maxBuyPrice - shippingBuffer));
   const decision =
@@ -1187,6 +1185,13 @@ function buildSourcingGuidance(marketplaceData) {
     profitRange: `${formatCurrency(lowProfit)}-${formatCurrency(highProfit)}`,
     avoidNotes: getAvoidNotes(marketplaceData),
   };
+}
+
+function calculateMaxBuyPrice(averageSalePrice, targetMargin = 0.42) {
+  const feeRate = 0.15;
+  const shippingBuffer = 8;
+  const expectedNet = Math.max(0, Number(averageSalePrice || 0) * (1 - feeRate) - shippingBuffer);
+  return Math.max(3, Math.floor(expectedNet * targetMargin));
 }
 
 function getAvoidNotes(marketplaceData) {
@@ -1264,6 +1269,8 @@ function renderCategory(category, maxScore, strongestCategories, reportData) {
   const score = categoryOpportunityScore(category);
   const strength = Math.round((score / maxScore) * 100);
   const isStrong = strongestCategories.some((strongCategory) => strongCategory.name === category.name);
+  const targetMargin = reportData?.confidence?.level === "low" ? 0.34 : 0.42;
+  const categoryMaxBuy = calculateMaxBuyPrice(category.averageSalePrice, targetMargin);
 
   return `
     <article class="category-card">
@@ -1283,6 +1290,10 @@ function renderCategory(category, maxScore, strongestCategories, reportData) {
           <dd>${Number(category.soldListings || 0).toLocaleString()}</dd>
         </div>
       </dl>
+      <div class="category-max-buy">
+        <span>Category max buy</span>
+        <strong>${formatCurrency(categoryMaxBuy)}</strong>
+      </div>
       <div class="meter" aria-label="${category.name} opportunity score ${strength}%">
         <span style="width: ${strength}%"></span>
       </div>

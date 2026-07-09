@@ -25,14 +25,15 @@ export const save = mutation({
     clientId: v.string(),
     id: v.string(),
     brand: v.string(),
+    savedAt: v.optional(v.string()),
     reportData: v.any(),
   },
   handler: async (ctx, args) => {
-    const savedAt = new Date().toISOString();
     const existing = await ctx.db
       .query("brandFiles")
       .withIndex("by_client_brand_id", (q) => q.eq("clientId", args.clientId).eq("brandId", args.id))
       .unique();
+    const savedAt = args.savedAt || existing?.savedAt || new Date().toISOString();
 
     if (existing) {
       await ctx.db.patch(existing._id, {

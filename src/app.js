@@ -539,8 +539,8 @@ async function generateReportForBrand(brand) {
   }
 }
 
-async function buildReportData(brand) {
-  const marketplaceData = await fetchEbayAverageSellingPrice(brand);
+async function buildReportData(brand, options = {}) {
+  const marketplaceData = await fetchEbayAverageSellingPrice(brand, options);
   const aiInsights = await generateAiInsights(marketplaceData);
   return {
     ...marketplaceData,
@@ -584,6 +584,11 @@ brandFileList.addEventListener("click", async (event) => {
 
   const brandFile = (await getBrandFiles()).find((item) => item.id === actionButton.dataset.brandFileId);
   if (!brandFile) return;
+
+  if (actionButton.dataset.brandFileAction === "refresh") {
+    await refreshBrandFileReport(brandFile, actionButton);
+    return;
+  }
 
   currentReportData = reviveReportData(brandFile.reportData);
   renderReport(currentReportData);
@@ -766,12 +771,12 @@ function activateTab(tabName) {
   }
 }
 
-async function saveBrandFile(reportData) {
+async function saveBrandFile(reportData, options = {}) {
   const id = normalizeBrandFileId(reportData.brand);
   const savedFile = {
     id,
     brand: reportData.brand,
-    savedAt: new Date().toISOString(),
+    savedAt: options.savedAt || new Date().toISOString(),
     reportData: serializeReportData(reportData),
   };
 
@@ -853,24 +858,59 @@ async function renderBrandFile() {
 
   brandFileList.innerHTML = savedFiles
     .map(
-      (savedFile) => `
+      (savedFile) => {
+        const reportData = reviveReportData(savedFile.reportData);
+        const refreshedAt = reportData.generatedAt || new Date(savedFile.savedAt || Date.now());
+        return `
         <article class="brand-file-item">
-          <div>
-            <h3>${escapeHtml(savedFile.brand)}</h3>
-            <p>Saved ${formatDate(new Date(savedFile.savedAt))}</p>
+          <div class="brand-file-main">
+            <div class="brand-file-title-row">
+              <h3>${escapeHtml(savedFile.brand)}</h3>
+              <button type="button" class="secondary-button brand-file-refresh-button" data-brand-file-action="refresh" data-brand-file-id="${escapeHtml(savedFile.id)}">
+                Refresh
+              </button>
+            </div>
+            <p>Saved ${formatDate(new Date(savedFile.savedAt || Date.now()))}</p>
           </div>
           <div class="brand-file-actions">
-            <button type="button" data-brand-file-action="open" data-brand-file-id="${escapeHtml(savedFile.id)}">
-              Open
-            </button>
+            <div class="brand-file-report-action">
+              <button type="button" data-brand-file-action="open" data-brand-file-id="${escapeHtml(savedFile.id)}">
+                Reseller report
+              </button>
+              <p class="brand-file-refresh-date">Last refreshed ${formatDate(refreshedAt)}</p>
+            </div>
             <button type="button" class="secondary-button" data-brand-file-action="print" data-brand-file-id="${escapeHtml(savedFile.id)}">
               Download PDF
             </button>
           </div>
         </article>
-      `,
+      `;
+      },
     )
     .join("");
+}
+
+async function refreshBrandFileReport(brandFile, actionButton) {
+  const originalText = actionButton.textContent;
+  actionButton.disabled = true;
+  actionButton.textContent = "Refreshing...";
+  pdfStatus.textContent = `Refreshing ${brandFile.brand} research...`;
+
+  try {
+    currentReportData = await buildReportData(brandFile.brand, { forceRefresh: true });
+    await saveBrandFile(currentReportData, { savedAt: brandFile.savedAt });
+    saveSearchHistory(currentReportData);
+    renderReport(currentReportData);
+    await renderBrandFile();
+    activateTab("results");
+    pdfStatus.textContent = `${currentReportData.brand} was refreshed with the latest available data.`;
+  } catch (error) {
+    console.error(error);
+    pdfStatus.textContent = error.message;
+  } finally {
+    actionButton.disabled = false;
+    actionButton.textContent = originalText;
+  }
 }
 
 function serializeReportData(reportData) {
@@ -891,10 +931,12 @@ function reviveReportData(reportData) {
   return revived;
 }
 
-async function fetchEbayAverageSellingPrice(brand) {
+async function fetchEbayAverageSellingPrice(brand, options = {}) {
   if (window.location.protocol !== "file:") {
     try {
-      const response = await fetch(`/api/ebay-average-selling-price?brand=${encodeURIComponent(brand)}`);
+      const searchParams = new URLSearchParams({ brand });
+      if (options.forceRefresh) searchParams.set("refresh", "1");
+      const response = await fetch(`/api/ebay-average-selling-price?${searchParams.toString()}`);
       if (!response.ok) {
         throw new Error(await getApiErrorMessage(response, "Could not load live eBay data."));
       }

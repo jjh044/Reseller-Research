@@ -284,12 +284,13 @@ async function handleEbayAverageSellingPrice(url, res) {
   }
 
   const brand = (url.searchParams.get("brand") || "").trim();
+  const forceRefresh = /^(1|true|yes)$/i.test(String(url.searchParams.get("refresh") || ""));
   if (!brand) {
     sendJson(res, 400, { error: "Missing brand query parameter" });
     return;
   }
 
-  const cachedResponse = getCachedEbayResponse(brand);
+  const cachedResponse = forceRefresh ? null : getCachedEbayResponse(brand);
   if (cachedResponse) {
     sendJson(res, 200, cachedResponse);
     return;
@@ -297,7 +298,7 @@ async function handleEbayAverageSellingPrice(url, res) {
 
   const cacheKey = getMarketplaceCacheKey(brand);
   const persistentCache = await getPersistentMarketplaceCache(cacheKey);
-  if (persistentCache && new Date(persistentCache.expiresAt).getTime() > Date.now()) {
+  if (!forceRefresh && persistentCache && new Date(persistentCache.expiresAt).getTime() > Date.now()) {
     sendJson(res, 200, markCachedResponse(persistentCache.responseData, "persistent-cache", persistentCache));
     return;
   }

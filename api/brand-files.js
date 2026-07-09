@@ -61,6 +61,7 @@ function normalizeBrandFile(body) {
   return {
     id,
     brand,
+    savedAt: typeof body?.savedAt === "string" ? body.savedAt : undefined,
     reportData,
   };
 }

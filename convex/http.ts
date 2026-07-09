@@ -77,6 +77,7 @@ http.route({
     const brand = String(body?.brand || body?.reportData?.brand || "").trim();
     const id = String(body?.id || slugify(brand)).trim();
     const reportData = body?.reportData;
+    const savedAt = typeof body?.savedAt === "string" ? body.savedAt : undefined;
 
     if (!brand || !id || !reportData || typeof reportData !== "object") {
       return json({ error: "Expected brand, id, and reportData" }, 400);
@@ -86,6 +87,7 @@ http.route({
       clientId,
       id,
       brand,
+      savedAt,
       reportData,
     });
     return json(savedFile);

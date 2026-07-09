@@ -80,6 +80,7 @@ const defaultEstimatedCategorySeed = [
 
 module.exports = async function handler(req, res) {
   let requestedBrand = String(req.query.brand || "").trim();
+  const forceRefresh = /^(1|true|yes)$/i.test(String(req.query.refresh || ""));
   try {
     if (!process.env.RAPIDAPI_KEY) {
       res.status(500).json({ error: "Missing RAPIDAPI_KEY environment variable" });
@@ -92,7 +93,7 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const cachedResponse = getCachedResponse(brand);
+    const cachedResponse = forceRefresh ? null : getCachedResponse(brand);
     if (cachedResponse) {
       res.status(200).json({
         ...cachedResponse,
@@ -104,7 +105,7 @@ module.exports = async function handler(req, res) {
 
     const cacheKey = getMarketplaceCacheKey(brand);
     const persistentCache = await getPersistentMarketplaceCache(cacheKey);
-    if (persistentCache && new Date(persistentCache.expiresAt).getTime() > Date.now()) {
+    if (!forceRefresh && persistentCache && new Date(persistentCache.expiresAt).getTime() > Date.now()) {
       res.status(200).json(markCachedResponse(persistentCache.responseData, "persistent-cache", persistentCache));
       return;
     }

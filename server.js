@@ -328,7 +328,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v9:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v8:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -594,9 +594,9 @@ function buildActiveListingQuery(brand, category) {
 }
 
 function withSellThroughRate(category, listedListings, soldListingsOverride = null) {
-  const parsedSoldResultCount = Number(soldListingsOverride);
-  const hasSoldResultCount = Number.isFinite(parsedSoldResultCount) && parsedSoldResultCount > 0;
-  const soldResultCount = hasSoldResultCount ? parsedSoldResultCount : null;
+  const soldResultCount = Number.isFinite(Number(soldListingsOverride))
+    ? Number(soldListingsOverride)
+    : Number(category.soldListings || 0);
   const activeListings = Number(listedListings);
   const hasListedListings = Number.isFinite(activeListings) && activeListings > 0;
 
@@ -604,7 +604,7 @@ function withSellThroughRate(category, listedListings, soldListingsOverride = nu
     ...category,
     soldResultCount,
     listedListings: hasListedListings ? activeListings : null,
-    sellThroughRate: hasSoldResultCount && hasListedListings ? soldResultCount / activeListings : null,
+    sellThroughRate: hasListedListings ? soldResultCount / activeListings : null,
   };
 }
 

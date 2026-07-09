@@ -1125,14 +1125,11 @@ function renderReport(data) {
 
 function summarizeReportData(data) {
   const totalSold = data.categories.reduce((sum, category) => sum + category.soldListings, 0);
-  const strReadyCategories = data.categories.filter(
-    (category) => Number(category.soldResultCount) > 0 && Number(category.listedListings) > 0,
-  );
-  const totalSoldResultCount = strReadyCategories.reduce(
-    (sum, category) => sum + Number(category.soldResultCount),
+  const totalSoldResultCount = data.categories.reduce(
+    (sum, category) => sum + Number(category.soldResultCount ?? category.soldListings ?? 0),
     0,
   );
-  const totalListed = strReadyCategories.reduce((sum, category) => sum + Number(category.listedListings), 0);
+  const totalListed = data.categories.reduce((sum, category) => sum + Number(category.listedListings || 0), 0);
   const blendedAsp = Math.round(
     data.categories.reduce(
       (sum, category) => sum + category.averageSalePrice * category.soldListings,
@@ -1405,20 +1402,21 @@ function normalizeReportCategories(reportData) {
 }
 
 function normalizeCategorySellThrough(category) {
+  const soldListings = Number(category.soldListings || 0);
   const soldResultCount = Number(category.soldResultCount);
   const listedListings = Number(category.listedListings);
   const sellThroughRate = Number(category.sellThroughRate);
   const hasListedListings = Number.isFinite(listedListings) && listedListings > 0;
-  const hasSoldResultCount = Number.isFinite(soldResultCount) && soldResultCount > 0;
+  const strSoldCount = Number.isFinite(soldResultCount) ? soldResultCount : soldListings;
 
   return {
     ...category,
-    soldResultCount: hasSoldResultCount ? soldResultCount : null,
+    soldResultCount: Number.isFinite(soldResultCount) ? soldResultCount : category.soldResultCount,
     listedListings: hasListedListings ? listedListings : category.listedListings ?? null,
-    sellThroughRate: Number.isFinite(sellThroughRate) && sellThroughRate > 0
+    sellThroughRate: Number.isFinite(sellThroughRate)
       ? sellThroughRate
-      : hasListedListings && hasSoldResultCount
-        ? soldResultCount / listedListings
+      : hasListedListings
+        ? strSoldCount / listedListings
         : null,
   };
 }
@@ -1445,10 +1443,10 @@ function categoryOpportunityScore(category) {
 
 function getSellThroughRate(category) {
   const sellThroughRate = Number(category?.sellThroughRate);
-  if (Number.isFinite(sellThroughRate) && sellThroughRate > 0) return sellThroughRate;
-  const soldListings = Number(category?.soldResultCount);
+  if (Number.isFinite(sellThroughRate)) return sellThroughRate;
+  const soldListings = Number(category?.soldResultCount ?? category?.soldListings ?? 0);
   const listedListings = Number(category?.listedListings || 0);
-  return soldListings > 0 && listedListings > 0 ? soldListings / listedListings : null;
+  return listedListings > 0 ? soldListings / listedListings : null;
 }
 
 function getBrandAdjustment(brand) {

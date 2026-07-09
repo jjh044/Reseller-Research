@@ -29,8 +29,8 @@ const categoryProfiles = {
 
 const excludedKeywords = "damaged fake replica lot read stains broken parts only";
 const lookbackDays = 90;
-const minimumResalePrice = 5;
 const maximumResalePrice = 500;
+const unusableCompTitlePattern = /\b(damaged|damage|fake|replica|counterfeit|broken|parts only|for parts|repair)\b/i;
 const minimumCategoryComps = 2;
 const maximumResultCategories = 4;
 const cacheTtlMilliseconds = 1000 * 60 * 60 * 6;
@@ -394,7 +394,7 @@ function normalizeBrand(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v6:${normalizeBrand(brand)}:${lookbackDays}`;
+  return `marketplace:v7:${normalizeBrand(brand)}:${lookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -687,7 +687,8 @@ function isSoldWithinDays(dateSold, days) {
 
 function hasUsableResalePrice(product) {
   const price = Number(product.sale_price);
-  return Number.isFinite(price) && price >= minimumResalePrice && price <= maximumResalePrice;
+  const title = String(product?.title || "");
+  return Number.isFinite(price) && price > 0 && price <= maximumResalePrice && !unusableCompTitlePattern.test(title);
 }
 
 function average(values) {

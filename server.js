@@ -44,8 +44,8 @@ const categoryProfiles = {
 
 const excludedKeywords = "damaged fake replica lot read stains broken parts only";
 const boloLookbackDays = 90;
-const minimumResalePrice = 5;
 const maximumResalePrice = 500;
+const unusableCompTitlePattern = /\b(damaged|damage|fake|replica|counterfeit|broken|parts only|for parts|repair)\b/i;
 const minimumCategoryComps = 2;
 const maximumResultCategories = 4;
 const marketplaceCategories = [
@@ -329,7 +329,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v6:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v7:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -1040,7 +1040,8 @@ function parseEbaySoldDate(dateSold) {
 
 function hasUsableResalePrice(product) {
   const price = Number(product.sale_price);
-  return Number.isFinite(price) && price >= minimumResalePrice && price <= maximumResalePrice;
+  const title = String(product?.title || "");
+  return Number.isFinite(price) && price > 0 && price <= maximumResalePrice && !unusableCompTitlePattern.test(title);
 }
 
 function getDataConfidence(sampleSize, categories) {

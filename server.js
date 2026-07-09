@@ -239,6 +239,7 @@ async function handleEbayAverageSellingPrice(url, res) {
 
   try {
     const apiResults = await getCategoryResponses(brand);
+    const tagReferences = await getTagReferences(brand);
 
     const categories = apiResults.filter((category) => category.soldListings >= minimumCategoryComps);
     if (categories.length === 0) {
@@ -263,6 +264,7 @@ async function handleEbayAverageSellingPrice(url, res) {
         ttlHours: Math.round(cacheTtlMilliseconds / 1000 / 60 / 60),
       },
       categories,
+      tagReferences,
     };
 
     ebayResponseCache.set(normalizeBrand(brand), {
@@ -293,7 +295,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v2:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v3:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -400,6 +402,43 @@ async function getCategoryResponses(brand) {
   const categories = getCategoriesForBrand(brand);
   const data = await findCompletedItems(brand);
   return categories.map((category) => mapCategoryResponse(brand, category, data));
+}
+
+async function getTagReferences(brand) {
+  try {
+    const data = await findCompletedItems(`${brand} tag`);
+    const seenImages = new Set();
+    return (Array.isArray(data.products) ? data.products : [])
+      .filter(
+        (product) =>
+          titleMatchesBrand(product.title, brand) &&
+          /^https:\/\//i.test(String(product.image_url || "")),
+      )
+      .sort((a, b) => tagReferenceScore(b.title) - tagReferenceScore(a.title))
+      .filter((product) => {
+        if (seenImages.has(product.image_url)) return false;
+        seenImages.add(product.image_url);
+        return true;
+      })
+      .slice(0, 3)
+      .map((product) => ({
+        title: product.title,
+        imageUrl: product.image_url,
+        listingUrl: /^https:\/\//i.test(String(product.link || "")) ? product.link : "",
+      }));
+  } catch (error) {
+    console.warn(`Tag reference lookup unavailable for ${brand}:`, error.message);
+    return [];
+  }
+}
+
+function tagReferenceScore(title) {
+  const value = String(title || "");
+  let score = 0;
+  if (/\b(vintage|old tag|older tag|tag label|single stitch|made in usa)\b/i.test(value)) score += 4;
+  if (/\b(tag|label|patch)\b/i.test(value)) score += 2;
+  if (/\b(nwt|new with tag|new w\/tag|no tag|no size tag)\b/i.test(value)) score -= 3;
+  return score;
 }
 
 function normalizeBrand(brand) {
@@ -757,6 +796,9 @@ function mapCategoryResponse(brand, category, data) {
         title: product.title,
         salePrice: Number(product.sale_price),
         soldDate: product.date_sold || "Recent sale",
+        imageUrl: /^https:\/\//i.test(String(product.image_url || "")) ? product.image_url : "",
+        listingUrl: /^https:\/\//i.test(String(product.link || "")) ? product.link : "",
+        itemId: String(product.item_id || ""),
       })),
   };
 }

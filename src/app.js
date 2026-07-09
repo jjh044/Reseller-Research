@@ -53,6 +53,8 @@ const scannerVideo = document.querySelector("#scanner-video");
 const captureCanvas = document.querySelector("#capture-canvas");
 const captureButton = document.querySelector("#capture-button");
 const cameraFallback = document.querySelector("#camera-fallback");
+const cameraMessage = document.querySelector("#camera-message");
+const enableCameraButton = document.querySelector("#enable-camera-button");
 const captureStrip = document.querySelector("#capture-strip");
 const scannerCount = document.querySelector("#scanner-count");
 const brandResearchButton = document.querySelector("#brand-research-button");
@@ -84,7 +86,7 @@ if (initialBrand) {
 }
 
 await initializeAuth();
-await startScannerCamera();
+prepareScannerCamera();
 renderCaptureStrip();
 
 tabButtons.forEach((tabButton) => {
@@ -144,21 +146,50 @@ brandResearchButton.addEventListener("click", async () => {
   await researchCapturedLabels();
 });
 
+enableCameraButton.addEventListener("click", startScannerCamera);
+
+function prepareScannerCamera() {
+  const isSupported = Boolean(navigator.mediaDevices?.getUserMedia);
+  showCameraFallback(
+    isSupported
+      ? "Enable the camera to scan labels"
+      : "Live camera is not supported here. Take or upload a photo instead.",
+    isSupported
+  );
+}
+
 async function startScannerCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
-    showCameraFallback();
+    showCameraFallback("Live camera is not supported here. Take or upload a photo instead.", false);
     return;
   }
+
+  enableCameraButton.disabled = true;
+  enableCameraButton.textContent = "Opening camera...";
+  labelStatus.textContent = "Requesting camera";
 
   try {
     const camera = await openPreferredCamera();
     cameraStream = camera.stream;
     scannerVideo.srcObject = cameraStream;
     await scannerVideo.play();
+    cameraFallback.hidden = true;
+    scannerVideo.hidden = false;
+    captureButton.classList.remove("is-upload");
+    captureButton.setAttribute("aria-label", "Capture label");
     labelStatus.textContent = camera.facing === "user" ? "Webcam ready" : "Ready";
   } catch (error) {
     console.warn("Camera unavailable:", error);
-    showCameraFallback();
+    const permissionBlocked = error.name === "NotAllowedError" || error.name === "SecurityError";
+    showCameraFallback(
+      permissionBlocked
+        ? "Camera permission is blocked. Allow it in browser settings, or take a photo below."
+        : "No live camera was found. Take or upload a photo instead.",
+      true
+    );
+  } finally {
+    enableCameraButton.disabled = false;
+    enableCameraButton.textContent = "Enable camera";
   }
 }
 
@@ -228,12 +259,14 @@ async function openRearCamera() {
   });
 }
 
-function showCameraFallback() {
+function showCameraFallback(message, canRetry) {
   cameraFallback.hidden = false;
+  cameraMessage.textContent = message;
+  enableCameraButton.hidden = !canRetry;
   scannerVideo.hidden = true;
   captureButton.classList.add("is-upload");
   captureButton.setAttribute("aria-label", "Take or upload label photo");
-  labelStatus.textContent = "Upload mode";
+  labelStatus.textContent = "Photo mode";
 }
 
 function captureVideoFrame() {
@@ -398,9 +431,16 @@ function renderQuickDecision() {
               <p class="eyebrow">Category performance</p>
               <h3>${escapeHtml(reportData.brand)}</h3>
             </div>
-            <button type="button" data-reseller-report="${escapeHtml(reportData.brand)}">
-              Reseller report
-            </button>
+            <div class="quick-brand-actions">
+              <div class="quick-max-buy">
+                <span>Max buy</span>
+                <strong>${formatCurrency(reportData.sourcing?.maxBuyPrice || 0)}</strong>
+                <small>Maximum target cost</small>
+              </div>
+              <button type="button" data-reseller-report="${escapeHtml(reportData.brand)}">
+                Reseller report
+              </button>
+            </div>
           </header>
           <div class="category-grid quick-category-grid">
             ${[...reportData.categories]
@@ -1014,10 +1054,6 @@ function renderReport(data) {
           <dt>Sample</dt>
           <dd>${Number(data.confidence?.sampleSize || data.sampleSize || totalSold).toLocaleString()} comps</dd>
         </div>
-        <div>
-          <dt>Cache</dt>
-          <dd>${escapeHtml(data.cache?.status || "none")}</dd>
-        </div>
       </dl>
       <p>${escapeHtml(data.confidence?.note || "Review sold comps manually before making high-cost buys.")}</p>
     </section>
@@ -1031,7 +1067,6 @@ function renderReport(data) {
     </section>
 
     <section class="sourcing-grid" aria-label="Sourcing recommendation">
-      ${renderSourcingCard("Buy/pass", data.sourcing?.decision || "Watch", data.sourcing?.decisionReason || "Review comps before buying.")}
       ${renderSourcingCard("Max buy", formatCurrency(data.sourcing?.maxBuyPrice || 0), "Target buy cost after marketplace fees and margin buffer.")}
       ${renderSourcingCard("Profit range", data.sourcing?.profitRange || "$0-$0", "Estimated net profit range after platform fees.")}
       ${renderSourcingCard("Avoid", data.sourcing?.avoidNotes || "Avoid damaged, replica, stained, or overly common basics.", "Common sourcing risks for this brand.")}
@@ -1052,26 +1087,16 @@ function renderReport(data) {
       <div class="section-heading">
         <div>
           <p class="eyebrow bolo-heading">BOLO'S</p>
+          <p>Real sold-listing snapshots with the sold price shown up front.</p>
         </div>
       </div>
-      <div class="item-table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Category</th>
-              <th>Item</th>
-              <th>Sold price</th>
-              <th>Sale timing</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${boloRows.map(({ category, item }) => renderItemRow(category, item)).join("")}
-          </tbody>
-        </table>
+      <div class="bolo-grid">
+        ${boloRows.map(({ category, item }) => renderBoloCard(category, item)).join("")}
       </div>
     </section>
 
     ${renderSearchHistory()}
+    ${renderTagReferences(data)}
   `;
 }
 
@@ -1248,15 +1273,70 @@ function renderCategory(category, maxScore, strongestCategories, reportData) {
   `;
 }
 
-function renderItemRow(category, item) {
-  return `
-    <tr>
-      <td>${category.name}</td>
-      <td>${escapeHtml(item.title)}</td>
-      <td>${formatCurrency(item.salePrice)}</td>
-      <td>${escapeHtml(item.soldDate || `${item.daysToSell} days`)}</td>
-    </tr>
+function renderBoloCard(category, item) {
+  const imageUrl = safeExternalUrl(item.imageUrl);
+  const listingUrl = safeExternalUrl(item.listingUrl);
+  const card = `
+    <article class="bolo-card">
+      <div class="bolo-image-wrap">
+        ${
+          imageUrl
+            ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(item.title)} sold listing" loading="lazy" />`
+            : `<div class="listing-image-missing">Listing image unavailable</div>`
+        }
+        <strong class="sold-price">Sold for ${formatCurrency(item.salePrice)}</strong>
+      </div>
+      <div class="bolo-copy">
+        <span>${escapeHtml(category.name)}</span>
+        <h3>${escapeHtml(item.title)}</h3>
+        <p>${escapeHtml(item.soldDate || "Recent sale")}</p>
+      </div>
+    </article>
   `;
+
+  return listingUrl
+    ? `<a class="bolo-listing-link" href="${escapeHtml(listingUrl)}" target="_blank" rel="noopener noreferrer" aria-label="View sold eBay listing for ${escapeHtml(item.title)}">${card}</a>`
+    : card;
+}
+
+function renderTagReferences(data) {
+  const references = Array.isArray(data.tagReferences)
+    ? data.tagReferences.filter((item) => safeExternalUrl(item.imageUrl)).slice(0, 3)
+    : [];
+  if (references.length === 0) return "";
+
+  return `
+    <section class="tag-reference-section">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow section-title">Tags</p>
+          <h2>Labels to look for</h2>
+          <p>Visual references from eBay listings. Compare the full tag, stitching, and typography before sourcing.</p>
+        </div>
+      </div>
+      <div class="tag-reference-grid">
+        ${references
+          .map((item, index) => {
+            const listingUrl = safeExternalUrl(item.listingUrl);
+            const content = `
+              <article class="tag-reference-card">
+                <img src="${escapeHtml(safeExternalUrl(item.imageUrl))}" alt="${escapeHtml(data.brand)} clothing tag reference ${index + 1}" loading="lazy" />
+                <p>${escapeHtml(item.title)}</p>
+              </article>
+            `;
+            return listingUrl
+              ? `<a href="${escapeHtml(listingUrl)}" target="_blank" rel="noopener noreferrer" aria-label="View tag reference listing ${index + 1}">${content}</a>`
+              : content;
+          })
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+function safeExternalUrl(value) {
+  const url = String(value || "").trim();
+  return /^https:\/\//i.test(url) ? url : "";
 }
 
 function getGrade(asp, soldComps) {

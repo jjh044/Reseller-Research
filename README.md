@@ -9,7 +9,7 @@ A sourcing intelligence app for clothing resellers.
 3. The detected or entered brand is sent to RapidAPI's eBay Average Selling Price endpoint.
 4. Successful eBay comp results are cached in Convex for repeat searches and stale fallback.
 5. The local Node proxy sends the normalized marketplace data to OpenAI for an AI readout.
-6. The page renders ASP, sell-through rate, data confidence, strongest categories, buy/pass guidance, max buy target, profit range, and highest sold items.
+6. The page renders ASP, sell-through rate, data confidence, strongest categories, max buy target, profit range, visual BOLO sold listings, and clothing-tag references.
 7. User saves the Brand file to their account or exports the generated cheat sheet through the PDF-ready print flow.
 
 ## Future API Integration Points
@@ -94,7 +94,10 @@ In Clerk, enable Email address sign-up/sign-in and password authentication. Cler
 - Live, cached-live, and estimated data labels.
 - Confidence and sample-size notes on every report.
 - Retry handling and structured server logs for marketplace API failures.
-- Buy/pass recommendation, max buy price, profit range, and avoid notes.
+- Max buy price, profit range, and avoid notes.
+- Quick Decision max-buy boxes for every researched brand.
+- Visual BOLO cards backed by real eBay sold-listing images and prices.
+- A bottom-of-report Tags gallery with up to three relevant eBay tag references.
 - Recent search history on the report screen.
 - Account-synced saved Brand files.
 - Mobile-first label scanner with separate camera and upload actions.

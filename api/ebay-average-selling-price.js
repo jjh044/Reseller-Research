@@ -322,11 +322,11 @@ async function getOpenAiTagReferences(brand) {
       {
         role: "system",
         content:
-          "You find visual clothing label references for resellers. Return only direct image URLs that show actual neck labels, care tags, waist tags, or brand tags. Do not return product photos, outfit photos, stock photos, BOLO listings, or logo-only graphics.",
+          "You find visual clothing label references for resellers. Return only references that visibly show actual neck labels, care tags, waist tags, or brand tags. imageUrl should be the direct image src or og:image URL for that tag image, not a Google/Bing thumbnail or search-result URL. sourceUrl should be the page where the image appears. Do not return product-only photos, outfit photos, stock photos, BOLO listings, or logo-only graphics.",
       },
       {
         role: "user",
-        content: `Find up to 3 direct image URLs for actual ${brand} clothing brand tags or labels. Search phrases like "${brand} brand tags", "${brand} clothing label", "${brand} vintage tag", and "${brand} neck label". Return a source page URL for each image.`,
+        content: `Find up to 3 image references for actual ${brand} clothing brand tags or labels. Search phrases like "${brand} brand tags", "${brand} clothing label", "${brand} vintage tag", and "${brand} neck label". Prefer source pages where the tag image appears clearly, then return the best direct image URL plus that source page URL.`,
       },
     ],
     text: {
@@ -393,7 +393,7 @@ function normalizeBrand(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v8:${normalizeBrand(brand)}:${lookbackDays}`;
+  return `marketplace:v9:${normalizeBrand(brand)}:${lookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {

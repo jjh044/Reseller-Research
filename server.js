@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const brandFilesHandler = require("./api/brand-files");
 const configHandler = require("./api/config");
+const tagImageHandler = require("./api/tag-image");
 
 loadLocalEnv();
 
@@ -247,45 +248,33 @@ async function handleConfig(req, res) {
 }
 
 async function handleTagImage(url, res) {
-  const imageUrl = String(url.searchParams.get("url") || "").trim();
-  const validationError = getProxyImageUrlError(imageUrl);
+  const responseHeaders = {};
+  let statusCode = 200;
 
-  if (validationError) {
-    sendText(res, 400, validationError);
-    return;
-  }
-
-  try {
-    const imageResponse = await fetch(imageUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; ResellerResearchAI/1.0; +https://reseller-research.vercel.app)",
-        Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+  await tagImageHandler(
+    {
+      method: "GET",
+      query: Object.fromEntries(url.searchParams.entries()),
+    },
+    {
+      status(nextStatusCode) {
+        statusCode = nextStatusCode;
+        return this;
       },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!imageResponse.ok) {
-      sendText(res, imageResponse.status, "Image unavailable");
-      return;
-    }
-
-    const contentType = String(imageResponse.headers.get("content-type") || "image/jpeg").toLowerCase();
-    if (!contentType.startsWith("image/")) {
-      sendText(res, 415, "URL did not return an image");
-      return;
-    }
-
-    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-    res.writeHead(200, {
-      "Content-Type": contentType,
-      "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
-      "Content-Length": imageBuffer.length,
-    });
-    res.end(imageBuffer);
-  } catch (error) {
-    sendText(res, 502, "Could not load tag image");
-  }
+      setHeader(name, value) {
+        responseHeaders[name] = value;
+      },
+      send(body) {
+        const buffer = Buffer.isBuffer(body) ? body : Buffer.from(String(body));
+        res.writeHead(statusCode, {
+          "Content-Type": responseHeaders["Content-Type"] || "text/plain; charset=utf-8",
+          ...responseHeaders,
+          "Content-Length": buffer.length,
+        });
+        res.end(buffer);
+      },
+    },
+  );
 }
 
 async function handleEbayAverageSellingPrice(url, res) {
@@ -376,7 +365,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v8:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v9:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -614,11 +603,11 @@ async function getOpenAiTagReferences(brand) {
       {
         role: "system",
         content:
-          "You find visual clothing label references for resellers. Return only direct image URLs that show actual neck labels, care tags, waist tags, or brand tags. Do not return product photos, outfit photos, stock photos, BOLO listings, or logo-only graphics.",
+          "You find visual clothing label references for resellers. Return only references that visibly show actual neck labels, care tags, waist tags, or brand tags. imageUrl should be the direct image src or og:image URL for that tag image, not a Google/Bing thumbnail or search-result URL. sourceUrl should be the page where the image appears. Do not return product-only photos, outfit photos, stock photos, BOLO listings, or logo-only graphics.",
       },
       {
         role: "user",
-        content: `Find up to 3 direct image URLs for actual ${brand} clothing brand tags or labels. Search phrases like "${brand} brand tags", "${brand} clothing label", "${brand} vintage tag", and "${brand} neck label". Return a source page URL for each image.`,
+        content: `Find up to 3 image references for actual ${brand} clothing brand tags or labels. Search phrases like "${brand} brand tags", "${brand} clothing label", "${brand} vintage tag", and "${brand} neck label". Prefer source pages where the tag image appears clearly, then return the best direct image URL plus that source page URL.`,
       },
     ],
     text: {
@@ -672,31 +661,6 @@ function isLikelyTagImageUrl(value) {
     (/\.(?:jpg|jpeg|png|webp)(?:[?#].*)?$/i.test(url) ||
       /\b(?:image|images|img|photo|photos|media|cdn|i\.ebayimg|pinimg|etsystatic|cloudfront)\b/i.test(url))
   );
-}
-
-function getProxyImageUrlError(value) {
-  if (!value || value.length > 2000) return "Missing image URL";
-
-  let parsed;
-  try {
-    parsed = new URL(value);
-  } catch {
-    return "Invalid image URL";
-  }
-
-  if (parsed.protocol !== "https:") return "Only HTTPS image URLs are supported";
-  const hostname = parsed.hostname.toLowerCase();
-  if (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname === "127.0.0.1" ||
-    hostname === "0.0.0.0" ||
-    hostname === "::1"
-  ) {
-    return "Local image URLs are not supported";
-  }
-
-  return "";
 }
 
 function normalizeBrand(brand) {

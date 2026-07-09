@@ -1115,6 +1115,8 @@ function renderReport(data) {
     ${renderSearchHistory()}
     ${renderTagReferences(data)}
   `;
+
+  hydrateTagReferenceImages(report);
 }
 
 function summarizeReportData(data) {
@@ -1346,10 +1348,10 @@ function renderTagReferences(data) {
         ${references
           .map((item, index) => {
             const listingUrl = safeExternalUrl(item.listingUrl);
-            const imageUrl = getTagReferenceImageUrl(item.imageUrl);
+            const imageUrl = getTagReferenceImageUrl(item.imageUrl, listingUrl);
             const content = `
               <article class="tag-reference-card">
-                <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(data.brand)} clothing tag reference ${index + 1}" loading="lazy" onload="handleTagReferenceImage(this)" onerror="handleTagReferenceImage(this, true)" />
+                <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(data.brand)} clothing tag reference ${index + 1}" loading="lazy" />
                 <div class="tag-image-fallback" aria-hidden="true">Tag image unavailable. Open the source reference.</div>
                 <p>${escapeHtml(item.title)}</p>
               </article>
@@ -1369,9 +1371,11 @@ function safeExternalUrl(value) {
   return /^https:\/\//i.test(url) ? url : "";
 }
 
-function getTagReferenceImageUrl(value) {
+function getTagReferenceImageUrl(value, sourceUrl = "") {
   const url = safeExternalUrl(value);
-  return url ? `/api/tag-image?url=${encodeURIComponent(url)}` : "";
+  if (!url) return "";
+  const source = safeExternalUrl(sourceUrl);
+  return `/api/tag-image?url=${encodeURIComponent(url)}${source ? `&source=${encodeURIComponent(source)}` : ""}`;
 }
 
 function isLikelyDisplayImageUrl(value) {
@@ -1392,6 +1396,17 @@ function handleTagReferenceImage(imageElement, forceInvalid = false) {
   const invalidImage =
     forceInvalid || imageElement.naturalWidth < 80 || imageElement.naturalHeight < 80;
   card.classList.toggle("is-invalid-image", invalidImage);
+}
+
+function hydrateTagReferenceImages(container) {
+  const images = container.querySelectorAll(".tag-reference-card img");
+  images.forEach((imageElement) => {
+    imageElement.addEventListener("load", () => handleTagReferenceImage(imageElement));
+    imageElement.addEventListener("error", () => handleTagReferenceImage(imageElement, true));
+    if (imageElement.complete) {
+      handleTagReferenceImage(imageElement, imageElement.naturalWidth === 0);
+    }
+  });
 }
 
 function getGrade(asp, soldComps) {

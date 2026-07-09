@@ -45,6 +45,7 @@ const boloLookbackDays = 90;
 const minimumResalePrice = 5;
 const maximumResalePrice = 500;
 const minimumCategoryComps = 2;
+const maximumResultCategories = 4;
 const marketplaceCategories = [
   { name: "Jeans", keywords: ["jeans", "denim pants"] },
   { name: "Jackets", keywords: ["jacket", "jackets", "coat", "coats", "parka", "blazer", "vest"] },
@@ -266,7 +267,9 @@ async function handleEbayAverageSellingPrice(url, res) {
   try {
     const marketplaceData = await getMarketplaceData(brand);
 
-    const categories = marketplaceData.categories.filter((category) => category.soldListings >= minimumCategoryComps);
+    const categories = selectTopResultCategories(
+      marketplaceData.categories.filter((category) => category.soldListings >= minimumCategoryComps),
+    );
     if (categories.length === 0) {
       sendJson(res, 404, {
         error: "No verified category comps found",
@@ -320,16 +323,17 @@ function getCachedEbayResponse(brand) {
     return null;
   }
 
-  return cached.responseBody;
+  return normalizeMarketplaceResponseCategories(cached.responseBody);
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v3:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v4:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
+  const normalizedResponse = normalizeMarketplaceResponseCategories(responseData);
   return {
-    ...responseData,
+    ...normalizedResponse,
     source: status === "stale-cache" ? "Stale cached eBay comps" : "Cached eBay comps",
     dataMode: status === "stale-cache" ? "stale-cache" : "cached-live",
     cache: {
@@ -486,7 +490,7 @@ function getMarketplaceErrorBody(error) {
 }
 
 function getEstimatedMarketplaceResponse(brand, refreshError = "") {
-  const categories = getEstimatedCategories(brand);
+  const categories = selectTopResultCategories(getEstimatedCategories(brand));
   const sampleSize = categories.reduce((sum, category) => sum + category.soldListings, 0);
 
   return {
@@ -526,6 +530,40 @@ function getEstimatedCategories(brand) {
       itemId: "",
     })),
   }));
+}
+
+function normalizeMarketplaceResponseCategories(responseData) {
+  if (!responseData || !Array.isArray(responseData.categories)) return responseData;
+  const categories = selectTopResultCategories(responseData.categories);
+  const sampleSize = categories.reduce((sum, category) => sum + Number(category.soldListings || 0), 0);
+
+  return {
+    ...responseData,
+    categories,
+    sampleSize,
+    confidence: responseData.confidence
+      ? {
+          ...responseData.confidence,
+          sampleSize,
+        }
+      : responseData.confidence,
+  };
+}
+
+function selectTopResultCategories(categories) {
+  return [...categories]
+    .sort((a, b) => {
+      const scoreDifference = getCategoryOpportunityScore(b) - getCategoryOpportunityScore(a);
+      if (scoreDifference !== 0) return scoreDifference;
+      const aspDifference = Number(b.averageSalePrice || 0) - Number(a.averageSalePrice || 0);
+      if (aspDifference !== 0) return aspDifference;
+      return Number(b.soldListings || 0) - Number(a.soldListings || 0);
+    })
+    .slice(0, maximumResultCategories);
+}
+
+function getCategoryOpportunityScore(category) {
+  return Number(category.averageSalePrice || 0) * Math.log2(Number(category.soldListings || 0) + 1);
 }
 
 function normalizeBrand(brand) {

@@ -71,6 +71,7 @@ const quickDecisionEmpty = document.querySelector("#quick-decision-empty");
 const quickDecisionList = document.querySelector("#quick-decision-list");
 const brandFileStorageKey = "reseller-brand-file-v1";
 const searchHistoryStorageKey = "flipfile-search-history-v1";
+const maximumResultCategories = 4;
 let currentReportData = null;
 let capturedLabelImages = [];
 let currentBatchBrands = [];
@@ -880,10 +881,10 @@ function serializeReportData(reportData) {
 }
 
 function reviveReportData(reportData) {
-  const revived = {
+  const revived = normalizeReportCategories({
     ...reportData,
     generatedAt: new Date(reportData.generatedAt),
-  };
+  });
   if (!revived.sourcing && Array.isArray(revived.categories)) {
     revived.sourcing = buildSourcingGuidance(revived, revived.aiInsights || {});
   }
@@ -899,10 +900,10 @@ async function fetchEbayAverageSellingPrice(brand) {
       }
 
       const data = await response.json();
-      return {
+      return normalizeReportCategories({
         ...data,
         generatedAt: new Date(data.generatedAt),
-      };
+      });
     } catch (error) {
       console.error("Live marketplace data unavailable:", error);
       throw error;
@@ -1363,6 +1364,36 @@ function getGrade(asp, soldComps) {
 
 function categoryOpportunityScore(category) {
   return Number(category.averageSalePrice || 0) * Math.log2(Number(category.soldListings || 0) + 1);
+}
+
+function normalizeReportCategories(reportData) {
+  if (!reportData || !Array.isArray(reportData.categories)) return reportData;
+  const categories = selectTopResultCategories(reportData.categories);
+  const sampleSize = categories.reduce((sum, category) => sum + Number(category.soldListings || 0), 0);
+
+  return {
+    ...reportData,
+    categories,
+    sampleSize,
+    confidence: reportData.confidence
+      ? {
+          ...reportData.confidence,
+          sampleSize,
+        }
+      : reportData.confidence,
+  };
+}
+
+function selectTopResultCategories(categories) {
+  return [...categories]
+    .sort((a, b) => {
+      const scoreDifference = categoryOpportunityScore(b) - categoryOpportunityScore(a);
+      if (scoreDifference !== 0) return scoreDifference;
+      const aspDifference = Number(b.averageSalePrice || 0) - Number(a.averageSalePrice || 0);
+      if (aspDifference !== 0) return aspDifference;
+      return Number(b.soldListings || 0) - Number(a.soldListings || 0);
+    })
+    .slice(0, maximumResultCategories);
 }
 
 function getBrandAdjustment(brand) {

@@ -584,30 +584,6 @@ button:disabled {
   gap: 12px;
 }
 
-.quick-max-buy {
-  display: grid;
-  min-width: 132px;
-  align-content: center;
-  border: 2px solid var(--orange);
-  border-radius: 8px;
-  background: #fff8f0;
-  padding: 9px 14px;
-}
-
-.quick-max-buy span,
-.quick-max-buy small {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 850;
-  text-transform: uppercase;
-}
-
-.quick-max-buy strong {
-  color: var(--green-dark);
-  font-size: 1.55rem;
-  line-height: 1.1;
-}
-
 .quick-category-loading {
   min-height: 120px;
   display: grid;
@@ -1090,11 +1066,11 @@ dd {
 .bolo-image-wrap {
   position: relative;
   min-height: 250px;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
-  background: #e9ece7;
+  background: #f6f7f4;
 }
 
-.bolo-image-wrap img,
 .tag-reference-card img {
   display: block;
   width: 100%;
@@ -1105,6 +1081,11 @@ dd {
 .bolo-image-wrap img {
   position: absolute;
   inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
 }
 
 .listing-image-missing {

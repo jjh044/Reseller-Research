@@ -436,11 +436,6 @@ function renderQuickDecision() {
               <h3>${escapeHtml(reportData.brand)}</h3>
             </div>
             <div class="quick-brand-actions">
-              <div class="quick-max-buy">
-                <span>Max buy</span>
-                <strong>${formatCurrency(reportData.sourcing?.maxBuyPrice || 0)}</strong>
-                <small>Maximum target cost</small>
-              </div>
               <button type="button" data-reseller-report="${escapeHtml(reportData.brand)}">
                 Reseller report
               </button>
@@ -1071,8 +1066,13 @@ function renderReport(data) {
   const categoriesByAsp = [...data.categories].sort((a, b) => b.averageSalePrice - a.averageSalePrice);
   const isEstimated = data.dataMode === "estimated";
   const boloRows = data.categories
-    .filter((category) => category.topItems.length > 0)
-    .map((category) => ({ category, item: category.topItems[0] }))
+    .map((category) => ({
+      category,
+      item: [...category.topItems]
+        .sort((a, b) => Number(b.salePrice || 0) - Number(a.salePrice || 0))
+        .find((item) => getBoloImageUrl(item.imageUrl)),
+    }))
+    .filter(({ item }) => item)
     .sort((a, b) => b.item.salePrice - a.item.salePrice);
 
   report.innerHTML = `
@@ -1138,21 +1138,25 @@ function renderReport(data) {
       </div>
     </section>
 
-    <section class="top-items-section">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow bolo-heading">BOLO'S</p>
-          <p>${
-            isEstimated
-              ? "Estimated examples shown while live sold-listing screenshots are temporarily unavailable."
-              : "Real sold-listing snapshots with the sold price shown up front."
-          }</p>
-        </div>
-      </div>
-      <div class="bolo-grid">
-        ${boloRows.map(({ category, item }) => renderBoloCard(category, item)).join("")}
-      </div>
-    </section>
+    ${
+      boloRows.length
+        ? `<section class="top-items-section">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow bolo-heading">BOLO'S</p>
+                <p>${
+                  isEstimated
+                    ? "Estimated examples shown while live sold-listing screenshots are temporarily unavailable."
+                    : "Real sold-listing snapshots with the sold price shown up front."
+                }</p>
+              </div>
+            </div>
+            <div class="bolo-grid">
+              ${boloRows.map(({ category, item }) => renderBoloCard(category, item)).join("")}
+            </div>
+          </section>`
+        : ""
+    }
 
     ${renderSearchHistory()}
     ${renderTagReferences(data)}
@@ -1346,7 +1350,7 @@ function renderCategory(category, maxScore, strongestCategories, reportData) {
 }
 
 function renderBoloCard(category, item) {
-  const imageUrl = safeExternalUrl(item.imageUrl);
+  const imageUrl = getBoloImageUrl(item.imageUrl);
   const listingUrl = safeExternalUrl(item.listingUrl);
   const card = `
     <article class="bolo-card">
@@ -1411,6 +1415,12 @@ function renderTagReferences(data) {
 function safeExternalUrl(value) {
   const url = String(value || "").trim();
   return /^https:\/\//i.test(url) ? url : "";
+}
+
+function getBoloImageUrl(value) {
+  const url = safeExternalUrl(value);
+  if (!url) return "";
+  return url.replace(/\/s-l\d+\.(jpg|jpeg|png|webp)([?#].*)?$/i, "/s-l500.$1$2");
 }
 
 function getTagReferenceImageUrl(value, sourceUrl = "") {

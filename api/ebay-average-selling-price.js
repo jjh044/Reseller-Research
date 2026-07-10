@@ -259,7 +259,7 @@ function getEstimatedCategories(brand) {
 
 function normalizeMarketplaceResponseCategories(responseData) {
   if (!responseData || !Array.isArray(responseData.categories)) return responseData;
-  const categories = selectTopResultCategories(responseData.categories);
+  const categories = selectTopResultCategories(responseData.categories).map(normalizeCategoryImages);
   const sampleSize = categories.reduce((sum, category) => sum + Number(category.soldListings || 0), 0);
 
   return {
@@ -272,6 +272,18 @@ function normalizeMarketplaceResponseCategories(responseData) {
           sampleSize,
         }
       : responseData.confidence,
+  };
+}
+
+function normalizeCategoryImages(category) {
+  return {
+    ...category,
+    topItems: Array.isArray(category.topItems)
+      ? category.topItems.map((item) => ({
+          ...item,
+          imageUrl: getFullSizeEbayImageUrl(item.imageUrl),
+        }))
+      : [],
   };
 }
 
@@ -539,11 +551,32 @@ function mapCategoryResponse(brand, category, data) {
         title: product.title,
         salePrice: Number(product.sale_price),
         soldDate: product.date_sold || "Recent sale",
-        imageUrl: /^https:\/\//i.test(String(product.image_url || "")) ? product.image_url : "",
+        imageUrl: getProductImageUrl(product),
         listingUrl: /^https:\/\//i.test(String(product.link || "")) ? product.link : "",
         itemId: String(product.item_id || ""),
       })),
   };
+}
+
+function getProductImageUrl(product) {
+  const candidates = [
+    product.image_url,
+    product.imageUrl,
+    product.gallery_url,
+    product.galleryURL,
+    product.thumbnail,
+    product.thumbnail_url,
+    product.picture_url,
+    product.pictureURL,
+  ];
+  const imageUrl = candidates.map((value) => String(value || "").trim()).find((value) => /^https:\/\//i.test(value));
+  return getFullSizeEbayImageUrl(imageUrl);
+}
+
+function getFullSizeEbayImageUrl(value) {
+  const url = String(value || "").trim();
+  if (!/^https:\/\//i.test(url)) return "";
+  return url.replace(/\/s-l\d+\.(jpg|jpeg|png|webp)([?#].*)?$/i, "/s-l500.$1$2");
 }
 
 function titleMatchesBrand(title, brand) {

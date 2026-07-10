@@ -336,8 +336,14 @@ async function researchCapturedLabels() {
     labelStatus.textContent = `Reading ${index + 1} of ${captures.length}`;
     try {
       const detected = await identifyClothingLabel(image);
-      if (!detectedBrands.some((item) => item.brand.toLowerCase() === detected.brand.toLowerCase())) {
-        detectedBrands.push(detected);
+      const existingBrand = detectedBrands.find((item) => item.brand.toLowerCase() === detected.brand.toLowerCase());
+      if (existingBrand) {
+        existingBrand.uploadedTagImages = [...(existingBrand.uploadedTagImages || []), image].slice(0, 3);
+      } else {
+        detectedBrands.push({
+          ...detected,
+          uploadedTagImages: [image],
+        });
       }
     } catch (error) {
       console.warn(`Could not identify capture ${index + 1}:`, error);
@@ -363,7 +369,7 @@ async function researchCapturedLabels() {
   activateTab("quick-decision");
 
   const reportResults = await Promise.allSettled(
-    detectedBrands.map((item) => buildReportData(item.brand)),
+    detectedBrands.map((item) => buildReportData(item.brand, { uploadedTagImages: item.uploadedTagImages || [] })),
   );
   quickDecisionReports = reportResults
     .filter((result) => result.status === "fulfilled")
@@ -537,8 +543,10 @@ async function generateReportForBrand(brand) {
 async function buildReportData(brand, options = {}) {
   const marketplaceData = await fetchEbayAverageSellingPrice(brand, options);
   const aiInsights = await generateAiInsights(marketplaceData);
+  const uploadedTagImages = sanitizeUploadedTagImages(options.uploadedTagImages);
   return {
     ...marketplaceData,
+    ...(uploadedTagImages.length ? { uploadedTagImages } : {}),
     aiInsights,
     sourcing: buildSourcingGuidance(marketplaceData, aiInsights),
   };
@@ -892,7 +900,10 @@ async function refreshBrandFileReport(brandFile, actionButton) {
   pdfStatus.textContent = `Refreshing ${brandFile.brand} research...`;
 
   try {
-    currentReportData = await buildReportData(brandFile.brand, { forceRefresh: true });
+    currentReportData = await buildReportData(brandFile.brand, {
+      forceRefresh: true,
+      uploadedTagImages: brandFile.reportData?.uploadedTagImages || [],
+    });
     await saveBrandFile(currentReportData, { savedAt: brandFile.savedAt });
     saveSearchHistory(currentReportData);
     renderReport(currentReportData);
@@ -1387,9 +1398,7 @@ function renderBoloCard(category, item) {
 }
 
 function renderTagReferences(data) {
-  const references = Array.isArray(data.tagReferences)
-    ? data.tagReferences.filter((item) => isLikelyDisplayImageUrl(item.imageUrl)).slice(0, 3)
-    : [];
+  const references = getReportTagReferences(data);
   if (references.length === 0) return "";
 
   return `
@@ -1410,7 +1419,7 @@ function renderTagReferences(data) {
               <article class="tag-reference-card">
                 <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(data.brand)} clothing tag reference ${index + 1}" loading="lazy" />
                 <div class="tag-image-fallback" aria-hidden="true">Tag image unavailable. Open the source reference.</div>
-                <p>${escapeHtml(item.title)}</p>
+                <p>${escapeHtml(item.title || "Tag label source")}</p>
               </article>
             `;
             return listingUrl
@@ -1421,6 +1430,25 @@ function renderTagReferences(data) {
       </div>
     </section>
   `;
+}
+
+function getReportTagReferences(data) {
+  const uploadedReferences = sanitizeUploadedTagImages(data.uploadedTagImages).map((imageUrl, index) => ({
+    title: index === 0 ? "Uploaded label photo" : `Uploaded label photo ${index + 1}`,
+    imageUrl,
+    listingUrl: "",
+  }));
+  const webReferences = Array.isArray(data.tagReferences)
+    ? data.tagReferences.filter((item) => isLikelyTagReference(item, data.brand))
+    : [];
+
+  return [...uploadedReferences, ...webReferences].slice(0, 3);
+}
+
+function sanitizeUploadedTagImages(images) {
+  return (Array.isArray(images) ? images : [])
+    .filter((image) => /^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(String(image || "")))
+    .slice(0, 3);
 }
 
 function safeExternalUrl(value) {
@@ -1488,10 +1516,25 @@ function hydrateBrandLogo(scope) {
 }
 
 function getTagReferenceImageUrl(value, sourceUrl = "") {
+  if (/^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(String(value || ""))) return value;
   const url = safeExternalUrl(value);
   if (!url) return "";
   const source = safeExternalUrl(sourceUrl);
   return `/api/tag-image?url=${encodeURIComponent(url)}${source ? `&source=${encodeURIComponent(source)}` : ""}`;
+}
+
+function isLikelyTagReference(item, brand = "") {
+  const imageUrl = item?.imageUrl || "";
+  if (!isLikelyDisplayImageUrl(imageUrl)) return false;
+
+  const text = `${item.title || ""} ${item.listingUrl || ""} ${imageUrl || ""} ${brand || ""}`.toLowerCase();
+  const evidenceText = text.replace(/\b(?:brand\s*tag\s*reference|tag\s*reference|reference)\b/g, "");
+  const hasTagLanguage = /\b(?:tag|tags|label|labels|neck\s*tag|care\s*tag|brand\s*tag|size\s*tag|wash\s*tag)\b/i.test(evidenceText);
+  const hasNonTagLanguage =
+    /\b(?:worn|wearing|outfit|lookbook|model|runway|fit\s*pic|street\s*style|try\s*on|haul|ootd|dress|jacket|shirt|jeans|pants|sweater|hoodie|coat|skirt|blouse|shorts|listing|sold)\b/i.test(evidenceText) &&
+    !/\b(?:tag|label)\b/i.test(evidenceText);
+
+  return hasTagLanguage && !hasNonTagLanguage;
 }
 
 function isLikelyDisplayImageUrl(value) {

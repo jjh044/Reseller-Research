@@ -335,7 +335,7 @@ async function getOpenAiTagReferences(brand) {
       {
         role: "system",
         content:
-          "You find visual clothing label references for resellers. Return only references that visibly show actual neck labels, care tags, waist tags, or brand tags. imageUrl should be the direct image src or og:image URL for that tag image, not a Google/Bing thumbnail or search-result URL. sourceUrl should be the page where the image appears. Do not return product-only photos, outfit photos, stock photos, BOLO listings, or logo-only graphics.",
+          "You find visual clothing label references for resellers. Return only close-up images where the clothing tag or sewn label is the main subject: neck labels, care tags, waist tags, size tags, or brand tags. imageUrl must be the direct image src or og:image URL for that tag image, not a Google/Bing thumbnail or search-result URL. sourceUrl must be the page where that same tag image appears. Do not return people wearing clothes, model photos, outfit photos, product-only photos, flat-lay clothing photos, BOLO listings, storefront photos, or logo-only graphics.",
       },
       {
         role: "user",
@@ -370,17 +370,29 @@ function sanitizeTagReferences(references) {
   const seenImages = new Set();
   return (Array.isArray(references) ? references : [])
     .map((reference) => ({
-      title: String(reference.title || "Brand tag reference").trim(),
+      title: String(reference.title || "").trim(),
       imageUrl: String(reference.imageUrl || "").trim(),
       listingUrl: String(reference.sourceUrl || "").trim(),
     }))
     .filter(
       (reference) =>
         isLikelyTagImageUrl(reference.imageUrl) &&
+        isLikelyTagReferenceText(reference) &&
         !seenImages.has(reference.imageUrl) &&
         seenImages.add(reference.imageUrl),
     )
     .slice(0, 3);
+}
+
+function isLikelyTagReferenceText(reference) {
+  const text = `${reference.title || ""} ${reference.listingUrl || ""} ${reference.imageUrl || ""}`.toLowerCase();
+  const evidenceText = text.replace(/\b(?:brand\s*tag\s*reference|tag\s*reference|reference)\b/g, "");
+  const hasTagLanguage = /\b(?:tag|tags|label|labels|neck\s*tag|care\s*tag|brand\s*tag|size\s*tag|wash\s*tag|waist\s*tag)\b/i.test(evidenceText);
+  const hasNonTagLanguage =
+    /\b(?:worn|wearing|outfit|lookbook|model|runway|fit\s*pic|street\s*style|try\s*on|haul|ootd|dress|jacket|shirt|jeans|pants|sweater|hoodie|coat|skirt|blouse|shorts|listing|sold)\b/i.test(evidenceText) &&
+    !/\b(?:tag|label)\b/i.test(evidenceText);
+
+  return hasTagLanguage && !hasNonTagLanguage;
 }
 
 function isLikelyTagImageUrl(value) {
@@ -406,7 +418,7 @@ function normalizeBrand(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v9:${normalizeBrand(brand)}:${lookbackDays}`;
+  return `marketplace:v10:${normalizeBrand(brand)}:${lookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {

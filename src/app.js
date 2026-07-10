@@ -336,14 +336,8 @@ async function researchCapturedLabels() {
     labelStatus.textContent = `Reading ${index + 1} of ${captures.length}`;
     try {
       const detected = await identifyClothingLabel(image);
-      const existingBrand = detectedBrands.find((item) => item.brand.toLowerCase() === detected.brand.toLowerCase());
-      if (existingBrand) {
-        existingBrand.uploadedTagImages = [...(existingBrand.uploadedTagImages || []), image].slice(0, 3);
-      } else {
-        detectedBrands.push({
-          ...detected,
-          uploadedTagImages: [image],
-        });
+      if (!detectedBrands.some((item) => item.brand.toLowerCase() === detected.brand.toLowerCase())) {
+        detectedBrands.push(detected);
       }
     } catch (error) {
       console.warn(`Could not identify capture ${index + 1}:`, error);
@@ -369,7 +363,7 @@ async function researchCapturedLabels() {
   activateTab("quick-decision");
 
   const reportResults = await Promise.allSettled(
-    detectedBrands.map((item) => buildReportData(item.brand, { uploadedTagImages: item.uploadedTagImages || [] })),
+    detectedBrands.map((item) => buildReportData(item.brand)),
   );
   quickDecisionReports = reportResults
     .filter((result) => result.status === "fulfilled")
@@ -543,10 +537,8 @@ async function generateReportForBrand(brand) {
 async function buildReportData(brand, options = {}) {
   const marketplaceData = await fetchEbayAverageSellingPrice(brand, options);
   const aiInsights = await generateAiInsights(marketplaceData);
-  const uploadedTagImages = sanitizeUploadedTagImages(options.uploadedTagImages);
   return {
     ...marketplaceData,
-    ...(uploadedTagImages.length ? { uploadedTagImages } : {}),
     aiInsights,
     sourcing: buildSourcingGuidance(marketplaceData, aiInsights),
   };
@@ -900,10 +892,7 @@ async function refreshBrandFileReport(brandFile, actionButton) {
   pdfStatus.textContent = `Refreshing ${brandFile.brand} research...`;
 
   try {
-    currentReportData = await buildReportData(brandFile.brand, {
-      forceRefresh: true,
-      uploadedTagImages: brandFile.reportData?.uploadedTagImages || [],
-    });
+    currentReportData = await buildReportData(brandFile.brand, { forceRefresh: true });
     await saveBrandFile(currentReportData, { savedAt: brandFile.savedAt });
     saveSearchHistory(currentReportData);
     renderReport(currentReportData);
@@ -1433,22 +1422,11 @@ function renderTagReferences(data) {
 }
 
 function getReportTagReferences(data) {
-  const uploadedReferences = sanitizeUploadedTagImages(data.uploadedTagImages).map((imageUrl, index) => ({
-    title: index === 0 ? "Uploaded label photo" : `Uploaded label photo ${index + 1}`,
-    imageUrl,
-    listingUrl: "",
-  }));
   const webReferences = Array.isArray(data.tagReferences)
     ? data.tagReferences.filter((item) => isLikelyTagReference(item, data.brand))
     : [];
 
-  return [...uploadedReferences, ...webReferences].slice(0, 3);
-}
-
-function sanitizeUploadedTagImages(images) {
-  return (Array.isArray(images) ? images : [])
-    .filter((image) => /^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(String(image || "")))
-    .slice(0, 3);
+  return webReferences.slice(0, 3);
 }
 
 function safeExternalUrl(value) {
@@ -1516,7 +1494,6 @@ function hydrateBrandLogo(scope) {
 }
 
 function getTagReferenceImageUrl(value, sourceUrl = "") {
-  if (/^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(String(value || ""))) return value;
   const url = safeExternalUrl(value);
   if (!url) return "";
   const source = safeExternalUrl(sourceUrl);

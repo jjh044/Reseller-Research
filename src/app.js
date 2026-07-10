@@ -1065,6 +1065,7 @@ function renderReport(data) {
   const maxScore = Math.max(...data.categories.map(categoryOpportunityScore));
   const categoriesByAsp = [...data.categories].sort((a, b) => b.averageSalePrice - a.averageSalePrice);
   const isEstimated = data.dataMode === "estimated";
+  const brandLogoUrl = getBrandLogoUrl(data.brand);
   const boloRows = data.categories
     .map((category) => ({
       category,
@@ -1079,7 +1080,16 @@ function renderReport(data) {
     <header class="report-header">
       <div>
         <p class="eyebrow">${data.source}</p>
-        <h2>${escapeHtml(data.brand)}</h2>
+        <div class="report-brand-title">
+          ${
+            brandLogoUrl
+              ? `<span class="report-brand-logo" aria-hidden="true">
+                  <img data-brand-logo data-brand-logo-src="${escapeHtml(brandLogoUrl)}" alt="" loading="lazy" decoding="async">
+                </span>`
+              : ""
+          }
+          <h2>${escapeHtml(data.brand)}</h2>
+        </div>
         <p class="timestamp">Generated ${formatDate(data.generatedAt)}</p>
       </div>
       <div class="grade">
@@ -1163,6 +1173,7 @@ function renderReport(data) {
   `;
 
   hydrateTagReferenceImages(report);
+  hydrateBrandLogo(report);
 }
 
 function summarizeReportData(data) {
@@ -1421,6 +1432,59 @@ function getBoloImageUrl(value) {
   const url = safeExternalUrl(value);
   if (!url) return "";
   return url.replace(/\/s-l\d+\.(jpg|jpeg|png|webp)([?#].*)?$/i, "/s-l500.$1$2");
+}
+
+function getBrandLogoUrl(brand) {
+  const slug = String(brand || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/\+/g, "plus")
+    .replace(/[^a-z0-9]+/g, "");
+
+  if (slug.length < 2) return "";
+
+  const domainAliases = {
+    abercrombieandfitch: "abercrombie.com",
+    arcteryx: "arcteryx.com",
+    bananarepublic: "bananarepublic.gap.com",
+    brooksbrothers: "brooksbrothers.com",
+    carhartt: "carhartt.com",
+    eileenfisher: "eileenfisher.com",
+    freepeople: "freepeople.com",
+    jcrew: "jcrew.com",
+    levis: "levi.com",
+    lululemon: "lululemon.com",
+    madewell: "madewell.com",
+    patagonia: "patagonia.com",
+    ralphlauren: "ralphlauren.com",
+    thenorthface: "thenorthface.com",
+    tommyhilfiger: "tommy.com",
+    urbanoutfitters: "urbanoutfitters.com",
+    victoriassecret: "victoriassecret.com",
+  };
+  const domain = domainAliases[slug] || `${slug}.com`;
+  return `https://logo.clearbit.com/${domain}`;
+}
+
+function hydrateBrandLogo(scope) {
+  scope.querySelectorAll("[data-brand-logo]").forEach((image) => {
+    const logoShell = image.closest(".report-brand-logo");
+    const src = image.dataset.brandLogoSrc;
+    if (!src) {
+      logoShell?.remove();
+      return;
+    }
+
+    image.addEventListener(
+      "error",
+      () => {
+        logoShell?.remove();
+      },
+      { once: true },
+    );
+    image.src = src;
+  });
 }
 
 function getTagReferenceImageUrl(value, sourceUrl = "") {

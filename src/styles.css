@@ -751,6 +751,34 @@ button:disabled {
   letter-spacing: 0;
 }
 
+.report-brand-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.report-brand-logo {
+  display: grid;
+  flex: 0 0 auto;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(17, 61, 49, 0.12);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(17, 61, 49, 0.08);
+}
+
+.report-brand-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 8px;
+}
+
 .timestamp {
   margin-bottom: 0;
   color: var(--muted);
@@ -1757,6 +1785,15 @@ td:nth-child(4) {
     font-size: 2.2rem;
   }
 
+  .report-brand-title {
+    align-items: flex-start;
+  }
+
+  .report-brand-logo {
+    width: 46px;
+    height: 46px;
+  }
+
   .sheet-actions {
     align-items: stretch;
     flex-direction: column;
@@ -1925,6 +1962,15 @@ td:nth-child(4) {
     font-size: 1.85rem;
   }
 
+  .report-brand-title {
+    gap: 10px;
+  }
+
+  .report-brand-logo {
+    width: 40px;
+    height: 40px;
+  }
+
   .flow-list {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -2006,6 +2052,12 @@ td:nth-child(4) {
 
   .report-header h2 {
     font-size: 30pt;
+  }
+
+  .report-brand-logo {
+    width: 0.46in;
+    height: 0.46in;
+    box-shadow: none;
   }
 
   .grade span {

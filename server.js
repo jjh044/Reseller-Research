@@ -14,6 +14,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const OPENAI_SEARCH_MODEL = process.env.OPENAI_SEARCH_MODEL || OPENAI_MODEL;
 const OPENAI_WEB_SEARCH_TOOL_TYPE = process.env.OPENAI_WEB_SEARCH_TOOL_TYPE || "web_search_preview";
+const GOOGLE_CSE_API_KEY = process.env.GOOGLE_CSE_API_KEY || process.env.GOOGLE_API_KEY || "";
+const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID || process.env.GOOGLE_SEARCH_ENGINE_ID || "";
 const ROOT = __dirname;
 
 const categoryProfiles = {
@@ -366,7 +368,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v11:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v12:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -475,7 +477,7 @@ async function getMarketplaceData(brand) {
   const data = await findCompletedItems(brand);
   return {
     categories: categories.map((category) => mapCategoryResponse(brand, category, data)),
-    tagReferences: await getOpenAiTagReferences(brand),
+    tagReferences: await getTagReferences(brand),
   };
 }
 
@@ -538,6 +540,12 @@ function getEstimatedCategories(brand) {
   }));
 }
 
+async function getTagReferences(brand) {
+  const googleReferences = await getGoogleImageTagReferences(brand);
+  if (googleReferences.length > 0) return googleReferences;
+  return getOpenAiTagReferences(brand);
+}
+
 function normalizeMarketplaceResponseCategories(responseData) {
   if (!responseData || !Array.isArray(responseData.categories)) return responseData;
   const categories = selectTopResultCategories(responseData.categories).map(normalizeCategoryImages);
@@ -582,6 +590,54 @@ function selectTopResultCategories(categories) {
 
 function getCategoryOpportunityScore(category) {
   return Number(category.averageSalePrice || 0) * Math.log2(Number(category.soldListings || 0) + 1);
+}
+
+async function getGoogleImageTagReferences(brand) {
+  if (!GOOGLE_CSE_API_KEY || !GOOGLE_CSE_ID) return [];
+
+  const queries = [
+    `${brand} tags`,
+    `${brand} tag label close up`,
+    `${brand} clothing label`,
+    `${brand} vintage neck tag`,
+  ];
+  const candidates = [];
+  const seenImages = new Set();
+
+  for (const query of queries) {
+    try {
+      const searchParams = new URLSearchParams({
+        key: GOOGLE_CSE_API_KEY,
+        cx: GOOGLE_CSE_ID,
+        q: query,
+        searchType: "image",
+        num: "10",
+        safe: "active",
+      });
+      const response = await getJson("customsearch.googleapis.com", `/customsearch/v1?${searchParams.toString()}`);
+      for (const item of Array.isArray(response.items) ? response.items : []) {
+        const imageUrl = String(item.link || "").trim();
+        if (!imageUrl || seenImages.has(imageUrl)) continue;
+        seenImages.add(imageUrl);
+        candidates.push({
+          title: String(item.title || item.snippet || `${brand} clothing tag`).trim(),
+          imageUrl,
+          listingUrl: String(item.image?.contextLink || item.displayLink || "").trim(),
+        });
+      }
+    } catch (error) {
+      console.warn(`Google image tag lookup unavailable for ${brand}:`, error.message);
+    }
+
+    if (candidates.length >= 12) break;
+  }
+
+  const seenVerifiedCandidates = new Set();
+  const imageCandidates = candidates
+    .filter((reference) => isLikelyTagImageUrl(reference.imageUrl))
+    .filter((reference) => !seenVerifiedCandidates.has(reference.imageUrl) && seenVerifiedCandidates.add(reference.imageUrl))
+    .slice(0, 12);
+  return verifyTagReferenceImages(brand, imageCandidates);
 }
 
 async function getOpenAiTagReferences(brand) {
@@ -677,6 +733,72 @@ function isLikelyTagReferenceText(reference) {
     /\b(?:with\s+tags?|nwt|new\s+with\s+tags?|worn|wearing|outfit|lookbook|model|runway|fit\s*pic|street\s*style|try\s*on|haul|ootd|dress|jacket|shirt|jeans|pants|sweater|hoodie|coat|skirt|blouse|shorts|listing|sold|product)\b/i.test(text);
 
   return hasCloseTagLanguage && !hasProductListingLanguage;
+}
+
+async function verifyTagReferenceImages(brand, references) {
+  if (!OPENAI_API_KEY || references.length === 0) return [];
+
+  const verified = [];
+  for (const reference of references) {
+    try {
+      if (await verifyTagReferenceImage(brand, reference)) verified.push(reference);
+    } catch (error) {
+      console.warn(`Could not verify tag image for ${brand}:`, error.message);
+    }
+    if (verified.length >= 3) break;
+  }
+
+  return verified;
+}
+
+async function verifyTagReferenceImage(brand, reference) {
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      isTagCloseup: { type: "boolean" },
+      reason: { type: "string" },
+    },
+    required: ["isTagCloseup", "reason"],
+  };
+  const payload = {
+    model: OPENAI_MODEL,
+    input: [
+      {
+        role: "system",
+        content:
+          "You verify reseller clothing tag reference images. Accept only images where a sewn clothing label, neck tag, care tag, waist tag, size tag, or brand tag is clearly visible and is the main subject. Reject product photos, people wearing clothes, flat lays, logos, placeholders, and images where the tag is not visible.",
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: `Does this image clearly show an actual ${brand} clothing tag or sewn label close-up?`,
+          },
+          {
+            type: "input_image",
+            image_url: reference.imageUrl,
+            detail: "low",
+          },
+        ],
+      },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "tag_image_verification",
+        strict: true,
+        schema,
+      },
+    },
+    max_output_tokens: 120,
+  };
+  const response = await postJson("api.openai.com", "/v1/responses", payload, {
+    Authorization: `Bearer ${OPENAI_API_KEY}`,
+    "Content-Type": "application/json",
+  });
+  return Boolean(JSON.parse(extractResponseText(response)).isTagCloseup);
 }
 
 function isLikelyTagImageUrl(value) {
@@ -906,6 +1028,44 @@ function postJson(hostname, requestPath, payload, headers) {
 
     request.on("error", reject);
     request.write(body);
+    request.end();
+  });
+}
+
+function getJson(hostname, requestPath, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const request = https.request(
+      {
+        method: "GET",
+        hostname,
+        path: requestPath,
+        headers,
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const rawBody = Buffer.concat(chunks).toString();
+          let parsed;
+
+          try {
+            parsed = JSON.parse(rawBody);
+          } catch (error) {
+            reject(new Error(`Invalid JSON response: ${rawBody.slice(0, 160)}`));
+            return;
+          }
+
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            reject(new Error(parsed.error?.message || `Request failed with ${response.statusCode}`));
+            return;
+          }
+
+          resolve(parsed);
+        });
+      },
+    );
+
+    request.on("error", reject);
     request.end();
   });
 }

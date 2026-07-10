@@ -40,10 +40,16 @@ VITE_CLERK_PUBLISHABLE_KEY=pk_test_your-clerk-publishable-key
 CLERK_SECRET_KEY=sk_test_your-clerk-secret-key
 # Optional:
 # OPENAI_MODEL=gpt-4o-mini
+# GOOGLE_CSE_API_KEY=your-google-custom-search-api-key
+# GOOGLE_CSE_ID=your-programmable-search-engine-id
 ```
 
 `OPENAI_API_KEY` is required for label photo identification. The app can still generate mock-backed
 brand sheets without it, but the label scanner will return an API key error.
+
+`GOOGLE_CSE_API_KEY` and `GOOGLE_CSE_ID` are optional, but when both are configured the Tags
+section searches Google Images first with `searchType=image`, then uses OpenAI vision to keep only
+actual clothing tag or label close-ups. Without them, the app falls back to the OpenAI web-search path.
 
 Then run the local proxy server:
 

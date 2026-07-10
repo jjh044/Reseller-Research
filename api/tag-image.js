@@ -53,6 +53,7 @@ async function resolveTagImage(imageUrl, sourceUrl) {
 
 async function fetchRemoteImage(url) {
   if (getProxyImageUrlError(url)) return null;
+  if (isBlockedImageCandidateText(url)) return null;
 
   try {
     const response = await fetch(url, {
@@ -127,12 +128,36 @@ function extractImageCandidates(html, pageUrl) {
     const tag = match[0];
     const candidate = decodeHtml(match[1] || "");
     const text = `${candidate} ${tag}`;
-    if (/\b(?:tag|tags|label|labels|neck|size|vintage|clothing|shirt|tee|brand)\b/i.test(text)) {
+    if (isLikelyTagCandidateText(text)) {
       addCandidate(candidate);
     }
   }
 
   return candidates.slice(0, 8);
+}
+
+function isLikelyTagCandidateText(value) {
+  const text = String(value || "").toLowerCase();
+  if (isBlockedImageCandidateText(text)) return false;
+  return (
+    /\b(?:tag|tags|label|labels)\b/i.test(text) &&
+    /\b(?:close\s*up|closeup|neck|care|brand|size|wash|waist|inside|interior|sewn|embroidered|vintage)\b/i.test(text)
+  );
+}
+
+function isBlockedImageCandidateText(value) {
+  const text = String(value || "").toLowerCase();
+  if (/\b(?:placeholder|blank|transparent|pixel|sprite|avatar|profile|logo|icon|with\s+tags?|nwt|new\s+with\s+tags?)\b/i.test(text)) {
+    return true;
+  }
+
+  const hasCloseTagEvidence =
+    /\b(?:tag|tags|label|labels)\b/i.test(text) &&
+    /\b(?:close\s*up|closeup|neck|care|brand|size|wash|waist|inside|interior|sewn|embroidered|vintage)\b/i.test(text);
+  return (
+    !hasCloseTagEvidence &&
+    /\b(?:worn|wearing|outfit|lookbook|model|runway|try\s*on|haul|ootd|dress|jacket|shirt|jeans|pants|sweater|hoodie|coat|skirt|blouse|shorts|listing|sold|product)\b/i.test(text)
+  );
 }
 
 function resolveCandidateUrl(value, pageUrl) {

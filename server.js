@@ -366,7 +366,7 @@ function getCachedEbayResponse(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v10:${normalizeBrand(brand)}:${boloLookbackDays}`;
+  return `marketplace:v11:${normalizeBrand(brand)}:${boloLookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {
@@ -616,11 +616,11 @@ async function getOpenAiTagReferences(brand) {
       {
         role: "system",
         content:
-          "You find visual clothing label references for resellers. Return only close-up images where the clothing tag or sewn label is the main subject: neck labels, care tags, waist tags, size tags, or brand tags. imageUrl must be the direct image src or og:image URL for that tag image, not a Google/Bing thumbnail or search-result URL. sourceUrl must be the page where that same tag image appears. Do not return people wearing clothes, model photos, outfit photos, product-only photos, flat-lay clothing photos, BOLO listings, storefront photos, or logo-only graphics.",
+          "You find visual clothing label references for resellers. Return only close-up images where the clothing tag or sewn label is the main subject: neck labels, care tags, waist tags, size tags, or brand tags. imageUrl must be the direct image src or og:image URL for that tag image, not a Google/Bing thumbnail or search-result URL. sourceUrl must be the page where that same tag image appears. Do not return people wearing clothes, model photos, outfit photos, product-only photos, flat-lay clothing photos, BOLO listings, storefront photos, logo-only graphics, generic image placeholders, or product listings titled with phrases like with tags, new with tags, or NWT.",
       },
       {
         role: "user",
-        content: `Find up to 3 image references for actual ${brand} clothing brand tags or labels. Search phrases like "${brand} brand tags", "${brand} clothing label", "${brand} vintage tag", and "${brand} neck label". Prefer source pages where the tag image appears clearly, then return the best direct image URL plus that source page URL.`,
+        content: `Find up to 3 image references for actual close-up ${brand} clothing brand tags or labels. Search phrases like "${brand} tag label close up", "${brand} clothing label closeup", "${brand} vintage neck tag", "${brand} care tag", and "${brand} inside label". Do not use product results whose title merely says "with tags", "new with tags", or "NWT"; those usually show clothing items, not the sewn label. Prefer source pages where the tag image appears clearly, then return the best direct image URL plus that source page URL.`,
       },
     ],
     text: {
@@ -667,13 +667,16 @@ function sanitizeTagReferences(references) {
 
 function isLikelyTagReferenceText(reference) {
   const text = `${reference.title || ""} ${reference.listingUrl || ""} ${reference.imageUrl || ""}`.toLowerCase();
-  const evidenceText = text.replace(/\b(?:brand\s*tag\s*reference|tag\s*reference|reference)\b/g, "");
-  const hasTagLanguage = /\b(?:tag|tags|label|labels|neck\s*tag|care\s*tag|brand\s*tag|size\s*tag|wash\s*tag|waist\s*tag)\b/i.test(evidenceText);
-  const hasNonTagLanguage =
-    /\b(?:worn|wearing|outfit|lookbook|model|runway|fit\s*pic|street\s*style|try\s*on|haul|ootd|dress|jacket|shirt|jeans|pants|sweater|hoodie|coat|skirt|blouse|shorts|listing|sold)\b/i.test(evidenceText) &&
-    !/\b(?:tag|label)\b/i.test(evidenceText);
+  const evidenceText = text
+    .replace(/\b(?:with\s+tags?|nwt|new\s+with\s+tags?|brand\s*tag\s*reference|tag\s*reference|reference)\b/g, "")
+    .replace(/\b(?:mens|men's|womens|women's|kids|youth)\b/g, "");
+  const hasCloseTagLanguage =
+    /\b(?:tag|tags|label|labels)\b/i.test(evidenceText) &&
+    /\b(?:close\s*up|closeup|neck|care|brand|size|wash|waist|inside|interior|sewn|embroidered|vintage)\b/i.test(evidenceText);
+  const hasProductListingLanguage =
+    /\b(?:with\s+tags?|nwt|new\s+with\s+tags?|worn|wearing|outfit|lookbook|model|runway|fit\s*pic|street\s*style|try\s*on|haul|ootd|dress|jacket|shirt|jeans|pants|sweater|hoodie|coat|skirt|blouse|shorts|listing|sold|product)\b/i.test(text);
 
-  return hasTagLanguage && !hasNonTagLanguage;
+  return hasCloseTagLanguage && !hasProductListingLanguage;
 }
 
 function isLikelyTagImageUrl(value) {

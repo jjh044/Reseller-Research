@@ -1505,13 +1505,16 @@ function isLikelyTagReference(item, brand = "") {
   if (!isLikelyDisplayImageUrl(imageUrl)) return false;
 
   const text = `${item.title || ""} ${item.listingUrl || ""} ${imageUrl || ""} ${brand || ""}`.toLowerCase();
-  const evidenceText = text.replace(/\b(?:brand\s*tag\s*reference|tag\s*reference|reference)\b/g, "");
-  const hasTagLanguage = /\b(?:tag|tags|label|labels|neck\s*tag|care\s*tag|brand\s*tag|size\s*tag|wash\s*tag)\b/i.test(evidenceText);
-  const hasNonTagLanguage =
-    /\b(?:worn|wearing|outfit|lookbook|model|runway|fit\s*pic|street\s*style|try\s*on|haul|ootd|dress|jacket|shirt|jeans|pants|sweater|hoodie|coat|skirt|blouse|shorts|listing|sold)\b/i.test(evidenceText) &&
-    !/\b(?:tag|label)\b/i.test(evidenceText);
+  const evidenceText = text
+    .replace(/\b(?:with\s+tags?|nwt|new\s+with\s+tags?|brand\s*tag\s*reference|tag\s*reference|reference)\b/g, "")
+    .replace(/\b(?:mens|men's|womens|women's|kids|youth)\b/g, "");
+  const hasCloseTagLanguage =
+    /\b(?:tag|tags|label|labels)\b/i.test(evidenceText) &&
+    /\b(?:close\s*up|closeup|neck|care|brand|size|wash|waist|inside|interior|sewn|embroidered|vintage)\b/i.test(evidenceText);
+  const hasProductListingLanguage =
+    /\b(?:with\s+tags?|nwt|new\s+with\s+tags?|worn|wearing|outfit|lookbook|model|runway|fit\s*pic|street\s*style|try\s*on|haul|ootd|dress|jacket|shirt|jeans|pants|sweater|hoodie|coat|skirt|blouse|shorts|listing|sold|product)\b/i.test(text);
 
-  return hasTagLanguage && !hasNonTagLanguage;
+  return hasCloseTagLanguage && !hasProductListingLanguage;
 }
 
 function isLikelyDisplayImageUrl(value) {

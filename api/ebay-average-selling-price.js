@@ -38,7 +38,7 @@ const persistentCacheTtlMilliseconds = 1000 * 60 * 60 * 24;
 const responseCache = new Map();
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const OPENAI_SEARCH_MODEL = process.env.OPENAI_SEARCH_MODEL || OPENAI_MODEL;
-const OPENAI_WEB_SEARCH_TOOL_TYPE = process.env.OPENAI_WEB_SEARCH_TOOL_TYPE || "web_search_preview";
+const OPENAI_WEB_SEARCH_TOOL_TYPE = process.env.OPENAI_WEB_SEARCH_TOOL_TYPE || "web_search";
 const GOOGLE_CSE_API_KEY = process.env.GOOGLE_CSE_API_KEY || process.env.GOOGLE_API_KEY || "";
 const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID || process.env.GOOGLE_SEARCH_ENGINE_ID || "";
 const marketplaceCategories = [
@@ -260,9 +260,9 @@ function getEstimatedCategories(brand) {
 }
 
 async function getTagReferences(brand) {
-  const googleReferences = await getGoogleImageTagReferences(brand);
-  if (googleReferences.length > 0) return googleReferences;
-  return getOpenAiTagReferences(brand);
+  const openAiReferences = await getOpenAiTagReferences(brand);
+  if (openAiReferences.length > 0) return openAiReferences;
+  return getGoogleImageTagReferences(brand);
 }
 
 function normalizeMarketplaceResponseCategories(responseData) {
@@ -362,51 +362,21 @@ async function getGoogleImageTagReferences(brand) {
 async function getOpenAiTagReferences(brand) {
   if (!process.env.OPENAI_API_KEY) return [];
 
-  const schema = {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      references: {
-        type: "array",
-        maxItems: 3,
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            title: { type: "string" },
-            imageUrl: { type: "string" },
-            sourceUrl: { type: "string" },
-          },
-          required: ["title", "imageUrl", "sourceUrl"],
-        },
-      },
-    },
-    required: ["references"],
-  };
-
   const payload = {
     model: OPENAI_SEARCH_MODEL,
-    tools: [{ type: OPENAI_WEB_SEARCH_TOOL_TYPE }],
-    input: [
+    tools: [
       {
-        role: "system",
-        content:
-          "You find visual clothing label references for resellers. Return only close-up images where the clothing tag or sewn label is the main subject: neck labels, care tags, waist tags, size tags, or brand tags. imageUrl must be the direct image src or og:image URL for that tag image, not a Google/Bing thumbnail or search-result URL. sourceUrl must be the page where that same tag image appears. Do not return people wearing clothes, model photos, outfit photos, product-only photos, flat-lay clothing photos, BOLO listings, storefront photos, logo-only graphics, generic image placeholders, or product listings titled with phrases like with tags, new with tags, or NWT.",
-      },
-      {
-        role: "user",
-        content: `Find up to 3 image references for actual close-up ${brand} clothing brand tags or labels. Search phrases like "${brand} tag label close up", "${brand} clothing label closeup", "${brand} vintage neck tag", "${brand} care tag", and "${brand} inside label". Do not use product results whose title merely says "with tags", "new with tags", or "NWT"; those usually show clothing items, not the sewn label. Prefer source pages where the tag image appears clearly, then return the best direct image URL plus that source page URL.`,
+        type: OPENAI_WEB_SEARCH_TOOL_TYPE,
+        search_content_types: ["image", "text"],
+        image_settings: {
+          max_results: 10,
+          caption: true,
+        },
       },
     ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "brand_tag_references",
-        strict: true,
-        schema,
-      },
-    },
-    max_output_tokens: 700,
+    include: ["web_search_call.results"],
+    input: `Search for real close-up image references of ${brand} clothing tags or sewn labels. Favor neck labels, care tags, waist tags, size tags, inside labels, and vintage brand tags. Avoid outfit photos, product listings that only say NWT or with tags, logos, model photos, flat lays, and storefront images.`,
+    max_output_tokens: 350,
   };
 
   try {
@@ -414,10 +384,43 @@ async function getOpenAiTagReferences(brand) {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       "Content-Type": "application/json",
     });
-    const parsed = JSON.parse(extractResponseText(response));
-    return sanitizeTagReferences(parsed.references);
+    const references = extractOpenAiImageSearchReferences(response, brand);
+    return verifyTagReferenceImages(brand, sanitizeTagReferences(references).slice(0, 10));
   } catch (error) {
     console.warn(`OpenAI tag reference lookup unavailable for ${brand}:`, error.message);
+    return [];
+  }
+}
+
+function extractOpenAiImageSearchReferences(response, brand) {
+  const references = [];
+
+  for (const item of Array.isArray(response?.output) ? response.output : []) {
+    const results = Array.isArray(item.results)
+      ? item.results
+      : Array.isArray(item.action?.results)
+        ? item.action.results
+        : [];
+
+    for (const result of results) {
+      const imageUrl = String(result.image_url || result.imageUrl || "").trim();
+      const sourceUrl = String(result.source_website_url || result.sourceUrl || "").trim();
+      if (!imageUrl) continue;
+
+      references.push({
+        title: String(result.caption || result.title || `${brand} clothing tag reference`).trim(),
+        imageUrl,
+        listingUrl: sourceUrl,
+      });
+    }
+  }
+
+  if (references.length > 0) return references;
+
+  try {
+    const parsed = JSON.parse(extractResponseText(response));
+    return Array.isArray(parsed.references) ? parsed.references : [];
+  } catch (error) {
     return [];
   }
 }
@@ -428,30 +431,15 @@ function sanitizeTagReferences(references) {
     .map((reference) => ({
       title: String(reference.title || "").trim(),
       imageUrl: String(reference.imageUrl || "").trim(),
-      listingUrl: String(reference.sourceUrl || "").trim(),
+      listingUrl: String(reference.sourceUrl || reference.listingUrl || "").trim(),
     }))
     .filter(
       (reference) =>
         isLikelyTagImageUrl(reference.imageUrl) &&
-        isLikelyTagReferenceText(reference) &&
         !seenImages.has(reference.imageUrl) &&
         seenImages.add(reference.imageUrl),
     )
     .slice(0, 3);
-}
-
-function isLikelyTagReferenceText(reference) {
-  const text = `${reference.title || ""} ${reference.listingUrl || ""} ${reference.imageUrl || ""}`.toLowerCase();
-  const evidenceText = text
-    .replace(/\b(?:with\s+tags?|nwt|new\s+with\s+tags?|brand\s*tag\s*reference|tag\s*reference|reference)\b/g, "")
-    .replace(/\b(?:mens|men's|womens|women's|kids|youth)\b/g, "");
-  const hasCloseTagLanguage =
-    /\b(?:tag|tags|label|labels)\b/i.test(evidenceText) &&
-    /\b(?:close\s*up|closeup|neck|care|brand|size|wash|waist|inside|interior|sewn|embroidered|vintage)\b/i.test(evidenceText);
-  const hasProductListingLanguage =
-    /\b(?:with\s+tags?|nwt|new\s+with\s+tags?|worn|wearing|outfit|lookbook|model|runway|fit\s*pic|street\s*style|try\s*on|haul|ootd|dress|jacket|shirt|jeans|pants|sweater|hoodie|coat|skirt|blouse|shorts|listing|sold|product)\b/i.test(text);
-
-  return hasCloseTagLanguage && !hasProductListingLanguage;
 }
 
 async function verifyTagReferenceImages(brand, references) {

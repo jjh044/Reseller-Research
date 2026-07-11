@@ -47,9 +47,9 @@ CLERK_SECRET_KEY=sk_test_your-clerk-secret-key
 `OPENAI_API_KEY` is required for label photo identification. The app can still generate mock-backed
 brand sheets without it, but the label scanner will return an API key error.
 
-`GOOGLE_CSE_API_KEY` and `GOOGLE_CSE_ID` are optional, but when both are configured the Tags
-section searches Google Images first with `searchType=image`, then uses OpenAI vision to keep only
-actual clothing tag or label close-ups. Without them, the app falls back to the OpenAI web-search path.
+The Tags section uses OpenAI web search with image results first, then OpenAI vision verifies that
+each candidate is an actual clothing tag or sewn label close-up. `GOOGLE_CSE_API_KEY` and
+`GOOGLE_CSE_ID` are optional legacy fallback settings for Google image search.
 
 Then run the local proxy server:
 

@@ -1423,7 +1423,7 @@ function renderTagReferences(data) {
 
 function getReportTagReferences(data) {
   const webReferences = Array.isArray(data.tagReferences)
-    ? data.tagReferences.filter((item) => isLikelyTagReference(item, data.brand))
+    ? data.tagReferences.filter((item) => hasUsableTagReferenceImage(item))
     : [];
 
   return webReferences.slice(0, 3);
@@ -1500,21 +1500,9 @@ function getTagReferenceImageUrl(value, sourceUrl = "") {
   return `/api/tag-image?url=${encodeURIComponent(url)}${source ? `&source=${encodeURIComponent(source)}` : ""}`;
 }
 
-function isLikelyTagReference(item, brand = "") {
+function hasUsableTagReferenceImage(item) {
   const imageUrl = item?.imageUrl || "";
-  if (!isLikelyDisplayImageUrl(imageUrl)) return false;
-
-  const text = `${item.title || ""} ${item.listingUrl || ""} ${imageUrl || ""} ${brand || ""}`.toLowerCase();
-  const evidenceText = text
-    .replace(/\b(?:with\s+tags?|nwt|new\s+with\s+tags?|brand\s*tag\s*reference|tag\s*reference|reference)\b/g, "")
-    .replace(/\b(?:mens|men's|womens|women's|kids|youth)\b/g, "");
-  const hasCloseTagLanguage =
-    /\b(?:tag|tags|label|labels)\b/i.test(evidenceText) &&
-    /\b(?:close\s*up|closeup|neck|care|brand|size|wash|waist|inside|interior|sewn|embroidered|vintage)\b/i.test(evidenceText);
-  const hasProductListingLanguage =
-    /\b(?:with\s+tags?|nwt|new\s+with\s+tags?|worn|wearing|outfit|lookbook|model|runway|fit\s*pic|street\s*style|try\s*on|haul|ootd|dress|jacket|shirt|jeans|pants|sweater|hoodie|coat|skirt|blouse|shorts|listing|sold|product)\b/i.test(text);
-
-  return hasCloseTagLanguage && !hasProductListingLanguage;
+  return isLikelyDisplayImageUrl(imageUrl);
 }
 
 function isLikelyDisplayImageUrl(value) {

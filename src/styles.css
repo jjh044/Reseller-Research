@@ -1207,6 +1207,10 @@ dd {
   line-height: 1.35;
 }
 
+.tag-image-fallback.is-visible {
+  display: grid;
+}
+
 .tag-reference-card.is-invalid-image img {
   display: none;
 }

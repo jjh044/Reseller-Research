@@ -40,6 +40,8 @@ VITE_CLERK_PUBLISHABLE_KEY=pk_test_your-clerk-publishable-key
 CLERK_SECRET_KEY=sk_test_your-clerk-secret-key
 # Optional:
 # OPENAI_MODEL=gpt-4o-mini
+# RAPIDAPI_GOOGLE_IMAGES_HOST=google-search72.p.rapidapi.com
+# RAPIDAPI_GOOGLE_IMAGES_PATH=/imagesearch
 # GOOGLE_CSE_API_KEY=your-google-custom-search-api-key
 # GOOGLE_CSE_ID=your-programmable-search-engine-id
 ```
@@ -47,9 +49,9 @@ CLERK_SECRET_KEY=sk_test_your-clerk-secret-key
 `OPENAI_API_KEY` is required for label photo identification. The app can still generate mock-backed
 brand sheets without it, but the label scanner will return an API key error.
 
-The Tags section uses OpenAI web search with image results first, then OpenAI vision verifies that
-each candidate is an actual clothing tag or sewn label close-up. `GOOGLE_CSE_API_KEY` and
-`GOOGLE_CSE_ID` are optional legacy fallback settings for Google image search.
+The Tags section uses RapidAPI Google Images first, then OpenAI vision verifies that each candidate is
+an actual clothing tag or sewn label close-up. OpenAI image search and Google CSE are fallback paths.
+If your RapidAPI Google Images product uses a different route, set `RAPIDAPI_GOOGLE_IMAGES_PATH`.
 
 Then run the local proxy server:
 

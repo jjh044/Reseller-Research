@@ -41,6 +41,8 @@ const OPENAI_SEARCH_MODEL = process.env.OPENAI_SEARCH_MODEL || OPENAI_MODEL;
 const OPENAI_WEB_SEARCH_TOOL_TYPE = process.env.OPENAI_WEB_SEARCH_TOOL_TYPE || "web_search";
 const GOOGLE_CSE_API_KEY = process.env.GOOGLE_CSE_API_KEY || process.env.GOOGLE_API_KEY || "";
 const GOOGLE_CSE_ID = process.env.GOOGLE_CSE_ID || process.env.GOOGLE_SEARCH_ENGINE_ID || "";
+const RAPIDAPI_GOOGLE_IMAGES_HOST = process.env.RAPIDAPI_GOOGLE_IMAGES_HOST || "google-search72.p.rapidapi.com";
+const RAPIDAPI_GOOGLE_IMAGES_PATH = process.env.RAPIDAPI_GOOGLE_IMAGES_PATH || "/imagesearch";
 const marketplaceCategories = [
   { name: "Jeans", keywords: ["jeans", "denim pants"] },
   { name: "Jackets", keywords: ["jacket", "jackets", "coat", "coats", "parka", "blazer", "vest"] },
@@ -260,6 +262,8 @@ function getEstimatedCategories(brand) {
 }
 
 async function getTagReferences(brand) {
+  const rapidApiGoogleReferences = await getRapidApiGoogleImageTagReferences(brand);
+  if (rapidApiGoogleReferences.length > 0) return rapidApiGoogleReferences;
   const openAiReferences = await getOpenAiTagReferences(brand);
   if (openAiReferences.length > 0) return openAiReferences;
   return getGoogleImageTagReferences(brand);
@@ -359,6 +363,50 @@ async function getGoogleImageTagReferences(brand) {
   return verifyTagReferenceImages(brand, imageCandidates);
 }
 
+async function getRapidApiGoogleImageTagReferences(brand) {
+  if (!process.env.RAPIDAPI_KEY || !RAPIDAPI_GOOGLE_IMAGES_HOST) return [];
+
+  const queries = [
+    `${brand} clothing tag label close up`,
+    `${brand} vintage neck tag`,
+    `${brand} care tag`,
+    `${brand} inside label`,
+  ];
+  const candidates = [];
+  const seenImages = new Set();
+
+  for (const query of queries) {
+    try {
+      const searchParams = new URLSearchParams({
+        q: query,
+        query,
+        lr: "en-US",
+        num: "10",
+      });
+      const response = await getJson(
+        RAPIDAPI_GOOGLE_IMAGES_HOST,
+        `${RAPIDAPI_GOOGLE_IMAGES_PATH}?${searchParams.toString()}`,
+        {
+          "x-rapidapi-key": process.env.RAPIDAPI_KEY,
+          "x-rapidapi-host": RAPIDAPI_GOOGLE_IMAGES_HOST,
+        },
+      );
+
+      for (const reference of extractRapidApiImageReferences(response, brand)) {
+        if (!reference.imageUrl || seenImages.has(reference.imageUrl)) continue;
+        seenImages.add(reference.imageUrl);
+        candidates.push(reference);
+      }
+    } catch (error) {
+      console.warn(`RapidAPI Google image tag lookup unavailable for ${brand}:`, error.message);
+    }
+
+    if (candidates.length >= 12) break;
+  }
+
+  return verifyTagReferenceImages(brand, sanitizeTagReferences(candidates, 12));
+}
+
 async function getOpenAiTagReferences(brand) {
   if (!process.env.OPENAI_API_KEY) return [];
 
@@ -385,11 +433,48 @@ async function getOpenAiTagReferences(brand) {
       "Content-Type": "application/json",
     });
     const references = extractOpenAiImageSearchReferences(response, brand);
-    return verifyTagReferenceImages(brand, sanitizeTagReferences(references).slice(0, 10));
+    return verifyTagReferenceImages(brand, sanitizeTagReferences(references, 10));
   } catch (error) {
     console.warn(`OpenAI tag reference lookup unavailable for ${brand}:`, error.message);
     return [];
   }
+}
+
+function extractRapidApiImageReferences(response, brand) {
+  const resultGroups = [
+    response?.image_results,
+    response?.images,
+    response?.items,
+    response?.results,
+    response?.data,
+    response?.organic,
+  ];
+  const references = [];
+
+  for (const group of resultGroups) {
+    for (const item of Array.isArray(group) ? group : []) {
+      const imageUrl = String(
+        item.image ||
+          item.image_url ||
+          item.imageUrl ||
+          item.original ||
+          item.original_image ||
+          item.thumbnail ||
+          item.thumbnail_url ||
+          "",
+      ).trim();
+      const listingUrl = String(item.link || item.url || item.source || item.source_url || item.sourceUrl || "").trim();
+      if (!imageUrl) continue;
+
+      references.push({
+        title: String(item.title || item.caption || item.snippet || `${brand} clothing tag reference`).trim(),
+        imageUrl,
+        listingUrl,
+      });
+    }
+  }
+
+  return references;
 }
 
 function extractOpenAiImageSearchReferences(response, brand) {
@@ -425,7 +510,7 @@ function extractOpenAiImageSearchReferences(response, brand) {
   }
 }
 
-function sanitizeTagReferences(references) {
+function sanitizeTagReferences(references, limit = 3) {
   const seenImages = new Set();
   return (Array.isArray(references) ? references : [])
     .map((reference) => ({
@@ -439,7 +524,7 @@ function sanitizeTagReferences(references) {
         !seenImages.has(reference.imageUrl) &&
         seenImages.add(reference.imageUrl),
     )
-    .slice(0, 3);
+    .slice(0, limit);
 }
 
 async function verifyTagReferenceImages(brand, references) {
@@ -531,7 +616,7 @@ function normalizeBrand(brand) {
 }
 
 function getMarketplaceCacheKey(brand) {
-  return `marketplace:v12:${normalizeBrand(brand)}:${lookbackDays}`;
+  return `marketplace:v13:${normalizeBrand(brand)}:${lookbackDays}`;
 }
 
 function markCachedResponse(responseData, status, cacheRecord, refreshError = "") {

@@ -1388,7 +1388,6 @@ function renderBoloCard(category, item) {
 
 function renderTagReferences(data) {
   const references = getReportTagReferences(data);
-  if (references.length === 0) return "";
 
   return `
     <section class="tag-reference-section">
@@ -1400,22 +1399,29 @@ function renderTagReferences(data) {
         </div>
       </div>
       <div class="tag-reference-grid">
-        ${references
-          .map((item, index) => {
-            const listingUrl = safeExternalUrl(item.listingUrl);
-            const imageUrl = getTagReferenceImageUrl(item.imageUrl, listingUrl);
-            const content = `
-              <article class="tag-reference-card">
-                <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(data.brand)} clothing tag reference ${index + 1}" loading="lazy" />
-                <div class="tag-image-fallback" aria-hidden="true">Tag image unavailable. Open the source reference.</div>
-                <p>${escapeHtml(item.title || "Tag label source")}</p>
-              </article>
-            `;
-            return listingUrl
-              ? `<a href="${escapeHtml(listingUrl)}" target="_blank" rel="noopener noreferrer" aria-label="View tag reference listing ${index + 1}">${content}</a>`
-              : content;
-          })
-          .join("")}
+        ${
+          references.length > 0
+            ? references
+                .map((item, index) => {
+                  const listingUrl = safeExternalUrl(item.listingUrl);
+                  const imageUrl = getTagReferenceImageUrl(item.imageUrl, listingUrl);
+                  const content = `
+                    <article class="tag-reference-card">
+                      <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(data.brand)} clothing tag reference ${index + 1}" loading="lazy" />
+                      <div class="tag-image-fallback" aria-hidden="true">Tag image unavailable. Open the source reference.</div>
+                      <p>${escapeHtml(item.title || "Tag label source")}</p>
+                    </article>
+                  `;
+                  return listingUrl
+                    ? `<a href="${escapeHtml(listingUrl)}" target="_blank" rel="noopener noreferrer" aria-label="View tag reference listing ${index + 1}">${content}</a>`
+                    : content;
+                })
+                .join("")
+            : `<article class="tag-reference-card tag-reference-empty">
+                <div class="tag-image-fallback is-visible" aria-hidden="true">No verified tag images found yet.</div>
+                <p>Refresh this report to search again.</p>
+              </article>`
+        }
       </div>
     </section>
   `;

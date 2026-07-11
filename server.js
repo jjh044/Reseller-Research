@@ -660,7 +660,7 @@ async function getRapidApiGoogleImageTagReferences(brand) {
     try {
       const searchParams = new URLSearchParams({
         query,
-        num: "10",
+        num: "3",
       });
       const response = await getJson(
         RAPIDAPI_GOOGLE_IMAGES_HOST,

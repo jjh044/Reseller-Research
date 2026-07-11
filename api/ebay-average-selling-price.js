@@ -378,9 +378,7 @@ async function getRapidApiGoogleImageTagReferences(brand) {
   for (const query of queries) {
     try {
       const searchParams = new URLSearchParams({
-        q: query,
         query,
-        lr: "en-US",
         num: "10",
       });
       const response = await getJson(

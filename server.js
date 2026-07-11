@@ -739,12 +739,16 @@ function extractRapidApiImageReferences(response, brand) {
           item.image_url ||
           item.imageUrl ||
           item.original ||
+          item.originalImageUrl ||
           item.original_image ||
           item.thumbnail ||
+          item.thumbnailImageUrl ||
           item.thumbnail_url ||
           "",
       ).trim();
-      const listingUrl = String(item.link || item.url || item.source || item.source_url || item.sourceUrl || "").trim();
+      const listingUrl = String(
+        item.contextLink || item.link || item.url || item.source || item.source_url || item.sourceUrl || "",
+      ).trim();
       if (!imageUrl) continue;
 
       references.push({

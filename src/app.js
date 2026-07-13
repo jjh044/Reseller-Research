@@ -1086,6 +1086,7 @@ function renderReport(data) {
             brandLogoUrls.length
               ? `<span class="report-brand-logo" aria-label="${escapeHtml(data.brand)} logo">
                   <img data-brand-logo data-brand-logo-srcs="${escapeHtml(brandLogoUrls.join("|"))}" alt="${escapeHtml(data.brand)} logo" loading="lazy" decoding="async">
+                  <span class="report-brand-logo-text" aria-hidden="true">${escapeHtml(data.brand)}</span>
                 </span>`
               : ""
           }
@@ -1480,11 +1481,7 @@ function getBrandLogoUrls(brand) {
     victoriassecret: "victoriassecret.com",
   };
   const domain = domainAliases[slug] || `${slug}.com`;
-  return [
-    `https://logo.clearbit.com/${domain}`,
-    `https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(domain)}`,
-    `https://icons.duckduckgo.com/ip3/${domain}.ico`,
-  ];
+  return [`https://logo.clearbit.com/${domain}?size=512`];
 }
 
 function hydrateBrandLogo(scope) {
@@ -1501,14 +1498,24 @@ function hydrateBrandLogo(scope) {
       return;
     }
 
-    image.addEventListener("error", () => {
+    const useNextSource = () => {
       sourceIndex += 1;
       if (sources[sourceIndex]) {
         image.src = sources[sourceIndex];
       } else {
-        logoShell?.remove();
+        image.remove();
+        logoShell?.classList.add("is-text-fallback");
       }
+    };
+
+    image.addEventListener("load", () => {
+      if (image.naturalWidth < 140 || image.naturalHeight < 40) {
+        useNextSource();
+        return;
+      }
+      logoShell?.classList.add("is-loaded");
     });
+    image.addEventListener("error", useNextSource);
     image.src = sources[sourceIndex];
   });
 }

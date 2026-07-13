@@ -778,27 +778,6 @@ button:disabled {
   padding: 14px 18px;
 }
 
-.report-brand-logo-text {
-  display: none;
-  max-width: 100%;
-  padding: 16px 18px;
-  color: var(--ink);
-  overflow-wrap: anywhere;
-  text-align: center;
-  font-size: clamp(1.25rem, 2vw, 1.8rem);
-  font-weight: 900;
-  line-height: 1;
-}
-
-.report-brand-logo.is-text-fallback {
-  height: auto;
-  min-height: 74px;
-}
-
-.report-brand-logo.is-text-fallback .report-brand-logo-text {
-  display: block;
-}
-
 .timestamp {
   margin-bottom: 0;
   color: var(--muted);

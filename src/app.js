@@ -1086,7 +1086,6 @@ function renderReport(data) {
             brandLogoUrls.length
               ? `<span class="report-brand-logo" aria-label="${escapeHtml(data.brand)} logo">
                   <img data-brand-logo data-brand-logo-srcs="${escapeHtml(brandLogoUrls.join("|"))}" alt="${escapeHtml(data.brand)} logo" loading="lazy" decoding="async">
-                  <span class="report-brand-logo-text" aria-hidden="true">${escapeHtml(data.brand)}</span>
                 </span>`
               : ""
           }
@@ -1481,7 +1480,11 @@ function getBrandLogoUrls(brand) {
     victoriassecret: "victoriassecret.com",
   };
   const domain = domainAliases[slug] || `${slug}.com`;
-  return [`https://logo.clearbit.com/${domain}?size=512`];
+  const brandImageAliases = {
+    rocawear: ["https://upload.wikimedia.org/wikipedia/commons/4/41/Rocawear_brand_logo.png"],
+  };
+
+  return [...(brandImageAliases[slug] || []), `https://logo.clearbit.com/${domain}?size=512`];
 }
 
 function hydrateBrandLogo(scope) {
@@ -1503,8 +1506,7 @@ function hydrateBrandLogo(scope) {
       if (sources[sourceIndex]) {
         image.src = sources[sourceIndex];
       } else {
-        image.remove();
-        logoShell?.classList.add("is-text-fallback");
+        logoShell?.remove();
       }
     };
 

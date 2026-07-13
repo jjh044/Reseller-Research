@@ -751,18 +751,17 @@ button:disabled {
   letter-spacing: 0;
 }
 
-.report-brand-title {
-  display: flex;
-  align-items: center;
-  gap: 14px;
+.report-brand-lockup {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
   min-width: 0;
 }
 
 .report-brand-logo {
   display: grid;
-  flex: 0 0 auto;
-  width: 58px;
-  height: 58px;
+  width: clamp(112px, 16vw, 164px);
+  height: clamp(48px, 7vw, 68px);
   place-items: center;
   overflow: hidden;
   border: 1px solid rgba(17, 61, 49, 0.12);
@@ -776,7 +775,7 @@ button:disabled {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  padding: 8px;
+  padding: 10px 14px;
 }
 
 .timestamp {
@@ -1789,13 +1788,9 @@ td:nth-child(4) {
     font-size: 2.2rem;
   }
 
-  .report-brand-title {
-    align-items: flex-start;
-  }
-
   .report-brand-logo {
-    width: 46px;
-    height: 46px;
+    width: 118px;
+    height: 52px;
   }
 
   .sheet-actions {
@@ -1966,13 +1961,9 @@ td:nth-child(4) {
     font-size: 1.85rem;
   }
 
-  .report-brand-title {
-    gap: 10px;
-  }
-
   .report-brand-logo {
-    width: 40px;
-    height: 40px;
+    width: 104px;
+    height: 46px;
   }
 
   .flow-list {
@@ -2059,8 +2050,8 @@ td:nth-child(4) {
   }
 
   .report-brand-logo {
-    width: 0.46in;
-    height: 0.46in;
+    width: 1.2in;
+    height: 0.48in;
     box-shadow: none;
   }
 

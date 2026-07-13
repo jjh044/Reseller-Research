@@ -1065,7 +1065,7 @@ function renderReport(data) {
   const maxScore = Math.max(...data.categories.map(categoryOpportunityScore));
   const categoriesByAsp = [...data.categories].sort((a, b) => b.averageSalePrice - a.averageSalePrice);
   const isEstimated = data.dataMode === "estimated";
-  const brandLogoUrl = getBrandLogoUrl(data.brand);
+  const brandLogoUrls = getBrandLogoUrls(data.brand);
   const boloRows = data.categories
     .map((category) => ({
       category,
@@ -1080,15 +1080,15 @@ function renderReport(data) {
     <header class="report-header">
       <div>
         <p class="eyebrow">${data.source}</p>
-        <div class="report-brand-title">
+        <div class="report-brand-lockup">
+          <h2>${escapeHtml(data.brand)}</h2>
           ${
-            brandLogoUrl
-              ? `<span class="report-brand-logo" aria-hidden="true">
-                  <img data-brand-logo data-brand-logo-src="${escapeHtml(brandLogoUrl)}" alt="" loading="lazy" decoding="async">
+            brandLogoUrls.length
+              ? `<span class="report-brand-logo" aria-label="${escapeHtml(data.brand)} logo">
+                  <img data-brand-logo data-brand-logo-srcs="${escapeHtml(brandLogoUrls.join("|"))}" alt="${escapeHtml(data.brand)} logo" loading="lazy" decoding="async">
                 </span>`
               : ""
           }
-          <h2>${escapeHtml(data.brand)}</h2>
         </div>
         <p class="timestamp">Generated ${formatDate(data.generatedAt)}</p>
       </div>
@@ -1449,7 +1449,7 @@ function getBoloImageUrl(value) {
   return url.replace(/\/s-l\d+\.(jpg|jpeg|png|webp)([?#].*)?$/i, "/s-l500.$1$2");
 }
 
-function getBrandLogoUrl(brand) {
+function getBrandLogoUrls(brand) {
   const slug = String(brand || "")
     .trim()
     .toLowerCase()
@@ -1457,7 +1457,7 @@ function getBrandLogoUrl(brand) {
     .replace(/\+/g, "plus")
     .replace(/[^a-z0-9]+/g, "");
 
-  if (slug.length < 2) return "";
+  if (slug.length < 2) return [];
 
   const domainAliases = {
     abercrombieandfitch: "abercrombie.com",
@@ -1473,32 +1473,43 @@ function getBrandLogoUrl(brand) {
     madewell: "madewell.com",
     patagonia: "patagonia.com",
     ralphlauren: "ralphlauren.com",
+    rocawear: "rocawear.com",
     thenorthface: "thenorthface.com",
     tommyhilfiger: "tommy.com",
     urbanoutfitters: "urbanoutfitters.com",
     victoriassecret: "victoriassecret.com",
   };
   const domain = domainAliases[slug] || `${slug}.com`;
-  return `https://logo.clearbit.com/${domain}`;
+  return [
+    `https://logo.clearbit.com/${domain}`,
+    `https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(domain)}`,
+    `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+  ];
 }
 
 function hydrateBrandLogo(scope) {
   scope.querySelectorAll("[data-brand-logo]").forEach((image) => {
     const logoShell = image.closest(".report-brand-logo");
-    const src = image.dataset.brandLogoSrc;
-    if (!src) {
+    const sources = String(image.dataset.brandLogoSrcs || "")
+      .split("|")
+      .map((src) => src.trim())
+      .filter(Boolean);
+    let sourceIndex = 0;
+
+    if (!sources.length) {
       logoShell?.remove();
       return;
     }
 
-    image.addEventListener(
-      "error",
-      () => {
+    image.addEventListener("error", () => {
+      sourceIndex += 1;
+      if (sources[sourceIndex]) {
+        image.src = sources[sourceIndex];
+      } else {
         logoShell?.remove();
-      },
-      { once: true },
-    );
-    image.src = src;
+      }
+    });
+    image.src = sources[sourceIndex];
   });
 }
 

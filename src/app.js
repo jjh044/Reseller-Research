@@ -1065,7 +1065,6 @@ function renderReport(data) {
   const maxScore = Math.max(...data.categories.map(categoryOpportunityScore));
   const categoriesByAsp = [...data.categories].sort((a, b) => b.averageSalePrice - a.averageSalePrice);
   const isEstimated = data.dataMode === "estimated";
-  const brandLogoUrls = getBrandLogoUrls(data.brand);
   const boloRows = data.categories
     .map((category) => ({
       category,
@@ -1080,16 +1079,7 @@ function renderReport(data) {
     <header class="report-header">
       <div>
         <p class="eyebrow">${data.source}</p>
-        <div class="report-brand-lockup">
-          <h2>${escapeHtml(data.brand)}</h2>
-          ${
-            brandLogoUrls.length
-              ? `<span class="report-brand-logo" aria-label="${escapeHtml(data.brand)} logo">
-                  <img data-brand-logo data-brand-logo-srcs="${escapeHtml(brandLogoUrls.join("|"))}" alt="${escapeHtml(data.brand)} logo" loading="lazy" decoding="async">
-                </span>`
-              : ""
-          }
-        </div>
+        <h2>${escapeHtml(data.brand)}</h2>
         <p class="timestamp">Generated ${formatDate(data.generatedAt)}</p>
       </div>
       <div class="grade">
@@ -1173,7 +1163,6 @@ function renderReport(data) {
   `;
 
   hydrateTagReferenceImages(report);
-  hydrateBrandLogo(report);
 }
 
 function summarizeReportData(data) {
@@ -1447,79 +1436,6 @@ function getBoloImageUrl(value) {
   const url = safeExternalUrl(value);
   if (!url) return "";
   return url.replace(/\/s-l\d+\.(jpg|jpeg|png|webp)([?#].*)?$/i, "/s-l500.$1$2");
-}
-
-function getBrandLogoUrls(brand) {
-  const slug = String(brand || "")
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, "and")
-    .replace(/\+/g, "plus")
-    .replace(/[^a-z0-9]+/g, "");
-
-  if (slug.length < 2) return [];
-
-  const domainAliases = {
-    abercrombieandfitch: "abercrombie.com",
-    arcteryx: "arcteryx.com",
-    bananarepublic: "bananarepublic.gap.com",
-    brooksbrothers: "brooksbrothers.com",
-    carhartt: "carhartt.com",
-    eileenfisher: "eileenfisher.com",
-    freepeople: "freepeople.com",
-    jcrew: "jcrew.com",
-    levis: "levi.com",
-    lululemon: "lululemon.com",
-    madewell: "madewell.com",
-    patagonia: "patagonia.com",
-    ralphlauren: "ralphlauren.com",
-    rocawear: "rocawear.com",
-    thenorthface: "thenorthface.com",
-    tommyhilfiger: "tommy.com",
-    urbanoutfitters: "urbanoutfitters.com",
-    victoriassecret: "victoriassecret.com",
-  };
-  const domain = domainAliases[slug] || `${slug}.com`;
-  const brandImageAliases = {
-    rocawear: ["https://upload.wikimedia.org/wikipedia/commons/4/41/Rocawear_brand_logo.png"],
-  };
-
-  return [...(brandImageAliases[slug] || []), `https://logo.clearbit.com/${domain}?size=512`];
-}
-
-function hydrateBrandLogo(scope) {
-  scope.querySelectorAll("[data-brand-logo]").forEach((image) => {
-    const logoShell = image.closest(".report-brand-logo");
-    const sources = String(image.dataset.brandLogoSrcs || "")
-      .split("|")
-      .map((src) => src.trim())
-      .filter(Boolean);
-    let sourceIndex = 0;
-
-    if (!sources.length) {
-      logoShell?.remove();
-      return;
-    }
-
-    const useNextSource = () => {
-      sourceIndex += 1;
-      if (sources[sourceIndex]) {
-        image.src = sources[sourceIndex];
-      } else {
-        logoShell?.remove();
-      }
-    };
-
-    image.addEventListener("load", () => {
-      if (image.naturalWidth < 140 || image.naturalHeight < 40) {
-        useNextSource();
-        return;
-      }
-      logoShell?.classList.add("is-loaded");
-    });
-    image.addEventListener("error", useNextSource);
-    image.src = sources[sourceIndex];
-  });
 }
 
 function getTagReferenceImageUrl(value, sourceUrl = "") {

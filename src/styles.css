@@ -744,39 +744,11 @@ button:disabled {
 }
 
 .report-header h2 {
-  margin: 0;
+  margin-bottom: 8px;
   overflow-wrap: anywhere;
   font-size: 3.7rem;
   line-height: 1;
   letter-spacing: 0;
-}
-
-.report-brand-lockup {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
-.report-brand-logo {
-  display: grid;
-  width: clamp(260px, 28vw, 380px);
-  height: clamp(104px, 11vw, 140px);
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid rgba(17, 61, 49, 0.12);
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 18px rgba(17, 61, 49, 0.08);
-}
-
-.report-brand-logo img {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: calc(100% - 28px);
-  max-height: calc(100% - 28px);
 }
 
 .timestamp {
@@ -1789,11 +1761,6 @@ td:nth-child(4) {
     font-size: 2.2rem;
   }
 
-  .report-brand-logo {
-    width: 230px;
-    height: 94px;
-  }
-
   .sheet-actions {
     align-items: stretch;
     flex-direction: column;
@@ -1962,11 +1929,6 @@ td:nth-child(4) {
     font-size: 1.85rem;
   }
 
-  .report-brand-logo {
-    width: min(100%, 220px);
-    height: 90px;
-  }
-
   .flow-list {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -2048,12 +2010,6 @@ td:nth-child(4) {
 
   .report-header h2 {
     font-size: 30pt;
-  }
-
-  .report-brand-logo {
-    width: 2.45in;
-    height: 0.95in;
-    box-shadow: none;
   }
 
   .grade span {

@@ -22,6 +22,13 @@
   box-sizing: border-box;
 }
 
+html {
+  min-width: 320px;
+  min-height: 100%;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+}
+
 [hidden] {
   display: none !important;
 }
@@ -29,8 +36,10 @@
 body {
   min-width: 320px;
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow-x: clip;
   margin: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
   background:
     radial-gradient(circle at 8% 16%, rgba(36, 199, 189, 0.18), transparent 28%),
     radial-gradient(circle at 88% 12%, rgba(255, 106, 47, 0.14), transparent 26%),
@@ -41,6 +50,18 @@ button,
 input {
   min-width: 0;
   font: inherit;
+}
+
+input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  font-size: 16px;
+}
+
+button,
+label,
+a {
+  touch-action: manipulation;
 }
 
 .auth-shell {
@@ -1621,11 +1642,13 @@ td:nth-child(4) {
   body {
     width: 100%;
     max-width: 100%;
+    overflow-x: clip;
   }
 
   .app-shell {
     width: 100%;
-    padding: 0;
+    min-height: 100dvh;
+    padding: 0 0 calc(env(safe-area-inset-bottom) + 8px);
   }
 
   .auth-shell {
@@ -1650,6 +1673,7 @@ td:nth-child(4) {
   .app-header {
     gap: 0;
     background: #090c0b;
+    padding-top: env(safe-area-inset-top);
   }
 
   .app-tabs {
@@ -1684,13 +1708,13 @@ td:nth-child(4) {
 
   .scanner-screen {
     width: 100%;
-    min-height: calc(100dvh - 98px);
+    min-height: calc(100dvh - 98px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     border-radius: 0;
     box-shadow: none;
   }
 
   .camera-lens video {
-    min-height: 42dvh;
+    min-height: clamp(320px, 52dvh, 560px);
   }
 
   .search-panel > .brand-mark {

@@ -2,6 +2,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "check": "node --check src/app.js && node --check server.js && node --check api/config.js && node scripts/mobile-release-check.js",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy"
   },

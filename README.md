@@ -61,6 +61,14 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+Before shipping a mobile-facing change, run:
+
+```powershell
+npm run check
+```
+
+The check script verifies JavaScript syntax plus iPhone-critical release invariants: safe viewport metadata, standalone manifest, 16px text controls to prevent Safari focus zoom, horizontal overflow clipping, compressed label-image payloads, request timeouts, and service-readiness reporting.
+
 Opening `index.html` directly still works, but it uses mock fallback data because browser JavaScript should not contain API keys.
 
 Use **Download PDF** after generating a sheet. The browser print dialog will open with print-specific styling for saving the brand sheet as a PDF.
@@ -102,6 +110,8 @@ In Clerk, enable Email address sign-up/sign-in and password authentication. Cler
 - Live, cached-live, and estimated data labels.
 - Confidence and sample-size notes on every report.
 - Retry handling and structured server logs for marketplace API failures.
+- iPhone-safe viewport rules, safe-area layout, no focus zoom on text fields, and compressed label photos for faster in-store scanning.
+- App service readiness is exposed through `/api/config` so missing marketplace, AI, or auth setup can surface in the UI.
 - Max buy price, profit range, and avoid notes.
 - Quick Decision max-buy boxes for every researched brand.
 - Visual BOLO cards backed by real eBay sold-listing images and prices.

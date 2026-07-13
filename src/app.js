@@ -72,6 +72,10 @@ const quickDecisionList = document.querySelector("#quick-decision-list");
 const brandFileStorageKey = "reseller-brand-file-v1";
 const searchHistoryStorageKey = "flipfile-search-history-v1";
 const maximumResultCategories = 4;
+const maximumLabelCaptures = 6;
+const labelImageMaxSide = 1440;
+const labelImageQuality = 0.82;
+const apiTimeoutMilliseconds = 45000;
 let currentReportData = null;
 let capturedLabelImages = [];
 let currentBatchBrands = [];
@@ -279,7 +283,7 @@ function captureVideoFrame() {
   captureCanvas.width = width;
   captureCanvas.height = height;
   captureCanvas.getContext("2d").drawImage(scannerVideo, 0, 0, width, height);
-  return captureCanvas.toDataURL("image/jpeg", 0.9);
+  return resizeCanvasToDataUrl(captureCanvas, labelImageMaxSide, labelImageQuality);
 }
 
 function pulseCaptureButton() {
@@ -300,6 +304,9 @@ async function addLabelFiles(files) {
 }
 
 function addLabelCapture(image) {
+  if (capturedLabelImages.length >= maximumLabelCaptures) {
+    capturedLabelImages.shift();
+  }
   capturedLabelImages.push(image);
   renderCaptureStrip();
 }
@@ -308,7 +315,10 @@ function renderCaptureStrip() {
   scannerCount.textContent = `${capturedLabelImages.length} ${capturedLabelImages.length === 1 ? "label" : "labels"}`;
   brandResearchButton.disabled = capturedLabelImages.length === 0;
   clearCapturesButton.disabled = capturedLabelImages.length === 0;
-  labelStatus.textContent = capturedLabelImages.length === 0 ? "Ready" : "Keep scanning";
+  labelStatus.textContent =
+    capturedLabelImages.length === 0
+      ? "Ready"
+      : `${capturedLabelImages.length}/${maximumLabelCaptures} ready`;
 
   captureStrip.innerHTML = capturedLabelImages
     .map(
@@ -544,6 +554,21 @@ async function buildReportData(brand, options = {}) {
   };
 }
 
+async function exportCurrentReport() {
+  if (!currentReportData) return;
+
+  const previousTitle = document.title;
+  document.title = `${slugify(currentReportData.brand)}-reseller-brand-intelligence`;
+  pdfStatus.textContent = "Opening export options...";
+
+  try {
+    window.print();
+    pdfStatus.textContent = "Use Save to Files or Share from the iPhone print screen.";
+  } finally {
+    document.title = previousTitle;
+  }
+}
+
 saveBrandFileButton.addEventListener("click", async () => {
   if (!currentReportData) return;
 
@@ -557,7 +582,7 @@ saveBrandFileButton.addEventListener("click", async () => {
   }
 });
 
-pdfButton.addEventListener("click", () => {
+pdfButton.addEventListener("click", async () => {
   if (!currentReportData) return;
 
   saveBrandFile(currentReportData)
@@ -567,10 +592,7 @@ pdfButton.addEventListener("click", () => {
       pdfStatus.textContent = error.message;
     });
 
-  const previousTitle = document.title;
-  document.title = `${slugify(currentReportData.brand)}-reseller-brand-intelligence`;
-  window.print();
-  document.title = previousTitle;
+  await exportCurrentReport();
 });
 
 brandFileList.addEventListener("click", async (event) => {
@@ -590,10 +612,7 @@ brandFileList.addEventListener("click", async (event) => {
   activateTab("results");
 
   if (actionButton.dataset.brandFileAction === "print") {
-    const previousTitle = document.title;
-    document.title = `${slugify(currentReportData.brand)}-reseller-brand-intelligence`;
-    window.print();
-    document.title = previousTitle;
+    await exportCurrentReport();
   }
 });
 
@@ -623,10 +642,11 @@ showSignUpButton.addEventListener("click", () => {
 
 async function initializeAuth() {
   try {
-    const configResponse = await fetch("/api/config");
+    const configResponse = await fetchWithTimeout("/api/config", {}, 15000);
     if (!configResponse.ok) throw new Error("Could not load app configuration.");
 
     const config = await configResponse.json();
+    syncServiceHealth(config);
     if (!config.clerkPublishableKey) {
       enableLocalOnlyMode();
       return;
@@ -661,6 +681,19 @@ function enableLocalOnlyMode() {
   userButtonMount.innerHTML = "";
   pdfStatus.textContent = "Brand files are saved locally on this device.";
   renderBrandFile();
+}
+
+function syncServiceHealth(config) {
+  if (config.ready) return;
+
+  const missing = [];
+  if (!config.services?.marketplace) missing.push("marketplace data");
+  if (!config.services?.ai) missing.push("AI scanning");
+  if (!config.services?.auth) missing.push("sign in");
+
+  if (missing.length) {
+    pdfStatus.textContent = `Live services need setup: ${missing.join(", ")}.`;
+  }
 }
 
 function syncAuthState(isServerAuthConfigured) {
@@ -776,7 +809,7 @@ async function saveBrandFile(reportData, options = {}) {
   };
 
   try {
-    const response = await fetch("/api/brand-files", {
+    const response = await fetchWithTimeout("/api/brand-files", {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -800,7 +833,7 @@ async function saveBrandFile(reportData, options = {}) {
 
 async function getBrandFiles() {
   try {
-    const response = await fetch("/api/brand-files", {
+    const response = await fetchWithTimeout("/api/brand-files", {
       headers: {
         Authorization: `Bearer ${await getAuthToken()}`,
       },
@@ -931,7 +964,7 @@ async function fetchEbayAverageSellingPrice(brand, options = {}) {
     try {
       const searchParams = new URLSearchParams({ brand });
       if (options.forceRefresh) searchParams.set("refresh", "1");
-      const response = await fetch(`/api/ebay-average-selling-price?${searchParams.toString()}`);
+      const response = await fetchWithTimeout(`/api/ebay-average-selling-price?${searchParams.toString()}`);
       if (!response.ok) {
         throw new Error(await getApiErrorMessage(response, "Could not load live eBay data."));
       }
@@ -951,7 +984,7 @@ async function fetchEbayAverageSellingPrice(brand, options = {}) {
 }
 
 async function identifyClothingLabel(imageDataUrl) {
-  const response = await fetch("/api/identify-label", {
+  const response = await fetchWithTimeout("/api/identify-label", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -987,7 +1020,7 @@ function fileToImageDataUrl(file) {
 }
 
 function resizeImageToDataUrl(image) {
-  const maxSide = 2048;
+  const maxSide = labelImageMaxSide;
   const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
   const height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -998,13 +1031,24 @@ function resizeImageToDataUrl(image) {
   canvas.height = height;
   context.drawImage(image, 0, 0, width, height);
 
-  return canvas.toDataURL("image/jpeg", 0.9);
+  return canvas.toDataURL("image/jpeg", labelImageQuality);
+}
+
+function resizeCanvasToDataUrl(sourceCanvas, maxSide, quality) {
+  const scale = Math.min(1, maxSide / Math.max(sourceCanvas.width, sourceCanvas.height));
+  if (scale >= 1) return sourceCanvas.toDataURL("image/jpeg", quality);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale));
+  canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
+  canvas.getContext("2d").drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", quality);
 }
 
 async function generateAiInsights(marketplaceData) {
   if (window.location.protocol !== "file:") {
     try {
-      const response = await fetch("/api/ai-insights", {
+      const response = await fetchWithTimeout("/api/ai-insights", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1035,6 +1079,25 @@ async function getApiErrorMessage(response, fallbackMessage) {
     return details.message || details.error || fallbackMessage;
   } catch (error) {
     return fallbackMessage;
+  }
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMilliseconds = apiTimeoutMilliseconds) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMilliseconds);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("The request timed out. Check your signal and try again.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 

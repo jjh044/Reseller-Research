@@ -1,0 +1,12 @@
+{
+  "name": "Resale Radar",
+  "short_name": "Resale Radar",
+  "description": "Fast clothing label scanning and reseller brand research.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7fbf8",
+  "theme_color": "#090c0b",
+  "categories": ["business", "shopping", "utilities"]
+}

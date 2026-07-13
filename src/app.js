@@ -1398,7 +1398,7 @@ function renderTagReferences(data) {
           <p>Visual tag references sourced separately from web results. Compare the full tag, stitching, and typography before sourcing.</p>
         </div>
       </div>
-      <div class="tag-reference-grid">
+      <div class="tag-reference-grid" data-tag-reference-grid>
         ${
           references.length > 0
             ? references
@@ -1408,7 +1408,6 @@ function renderTagReferences(data) {
                   const content = `
                     <article class="tag-reference-card">
                       <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(data.brand)} clothing tag reference ${index + 1}" loading="lazy" />
-                      <div class="tag-image-fallback" aria-hidden="true">Tag image unavailable. Open the source reference.</div>
                       <p>${escapeHtml(item.title || "Tag label source")}</p>
                     </article>
                   `;
@@ -1417,14 +1416,18 @@ function renderTagReferences(data) {
                     : content;
                 })
                 .join("")
-            : `<article class="tag-reference-card tag-reference-empty">
-                <div class="tag-image-fallback is-visible" aria-hidden="true">No verified tag images found yet.</div>
-                <p>Refresh this report to search again.</p>
-              </article>`
+            : renderTagReferenceEmptyState()
         }
       </div>
     </section>
   `;
+}
+
+function renderTagReferenceEmptyState() {
+  return `<article class="tag-reference-card tag-reference-empty" data-tag-reference-empty>
+    <div class="tag-image-fallback is-visible" aria-hidden="true">No verified tag images found yet.</div>
+    <p>Refresh this report to search again.</p>
+  </article>`;
 }
 
 function getReportTagReferences(data) {
@@ -1528,7 +1531,19 @@ function handleTagReferenceImage(imageElement, forceInvalid = false) {
 
   const invalidImage =
     forceInvalid || imageElement.naturalWidth < 80 || imageElement.naturalHeight < 80;
-  card.classList.toggle("is-invalid-image", invalidImage);
+  if (!invalidImage) return;
+
+  const grid = card.closest("[data-tag-reference-grid]");
+  const wrapper = card.parentElement?.matches("[data-tag-reference-grid] > a") ? card.parentElement : card;
+  wrapper.remove();
+  updateTagReferenceGridState(grid);
+}
+
+function updateTagReferenceGridState(grid) {
+  if (!grid || grid.querySelector(".tag-reference-card img")) return;
+  if (!grid.querySelector("[data-tag-reference-empty]")) {
+    grid.insertAdjacentHTML("beforeend", renderTagReferenceEmptyState());
+  }
 }
 
 function hydrateTagReferenceImages(container) {

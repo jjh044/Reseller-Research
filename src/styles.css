@@ -744,7 +744,7 @@ button:disabled {
 }
 
 .report-header h2 {
-  margin-bottom: 8px;
+  margin: 0;
   overflow-wrap: anywhere;
   font-size: 3.7rem;
   line-height: 1;
@@ -752,16 +752,17 @@ button:disabled {
 }
 
 .report-brand-lockup {
-  display: grid;
-  justify-items: start;
-  gap: 10px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .report-brand-logo {
   display: grid;
-  width: clamp(188px, 22vw, 260px);
-  height: clamp(74px, 9vw, 98px);
+  width: clamp(260px, 28vw, 380px);
+  height: clamp(104px, 11vw, 140px);
   place-items: center;
   overflow: hidden;
   border: 1px solid rgba(17, 61, 49, 0.12);
@@ -772,10 +773,10 @@ button:disabled {
 
 .report-brand-logo img {
   display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  padding: 14px 18px;
+  width: auto;
+  height: auto;
+  max-width: calc(100% - 28px);
+  max-height: calc(100% - 28px);
 }
 
 .timestamp {
@@ -1789,8 +1790,8 @@ td:nth-child(4) {
   }
 
   .report-brand-logo {
-    width: 176px;
-    height: 70px;
+    width: 230px;
+    height: 94px;
   }
 
   .sheet-actions {
@@ -1962,8 +1963,8 @@ td:nth-child(4) {
   }
 
   .report-brand-logo {
-    width: 154px;
-    height: 64px;
+    width: min(100%, 220px);
+    height: 90px;
   }
 
   .flow-list {
@@ -2050,8 +2051,8 @@ td:nth-child(4) {
   }
 
   .report-brand-logo {
-    width: 1.85in;
-    height: 0.72in;
+    width: 2.45in;
+    height: 0.95in;
     box-shadow: none;
   }
 

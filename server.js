@@ -1397,7 +1397,7 @@ function average(values) {
 }
 
 function serveStatic(pathname, res) {
-  const cleanPath = pathname === "/" ? "/index.html" : pathname;
+  const cleanPath = pathname === "/" ? "/index.html" : pathname === "/partners" ? "/partners.html" : pathname;
   const filePath = path.join(ROOT, cleanPath);
 
   if (!filePath.startsWith(ROOT)) {
@@ -1421,6 +1421,7 @@ function getContentType(filePath) {
   if (extension === ".html") return "text/html; charset=utf-8";
   if (extension === ".css") return "text/css; charset=utf-8";
   if (extension === ".js") return "text/javascript; charset=utf-8";
+  if (extension === ".webmanifest") return "application/manifest+json; charset=utf-8";
   return "application/octet-stream";
 }
 

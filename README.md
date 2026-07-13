@@ -73,6 +73,12 @@ Opening `index.html` directly still works, but it uses mock fallback data becaus
 
 Use **Download PDF** after generating a sheet. The browser print dialog will open with print-specific styling for saving the brand sheet as a PDF.
 
+## Public Pages
+
+- `/partners` - creator partner page for reseller influencers and rev-share outreach.
+- `/privacy.html` - privacy policy.
+- `/terms.html` - terms.
+
 ## Convex Storage
 
 The Brand file syncs to Convex when `CONVEX_HTTP_URL` is configured. If that value is missing, the app falls back to browser `localStorage` so saving still works during setup.

@@ -51,6 +51,14 @@ const checks = [
     file: "api/config.js",
     test: (content) => /ready:\s*services\.marketplace && services\.ai && services\.auth/.test(content) && /services,/.test(content),
   },
+  {
+    name: "creator partner page is routed",
+    file: "vercel.json",
+    test: (content) =>
+      fs.existsSync(path.join(root, "partners.html")) &&
+      /"source"\s*:\s*"\/partners"/.test(content) &&
+      /"destination"\s*:\s*"\/partners\.html"/.test(content),
+  },
 ];
 
 const failures = checks.filter((check) => !check.test(read(check.file)));

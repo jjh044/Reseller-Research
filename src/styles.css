@@ -1274,6 +1274,201 @@ dd {
   line-height: 1.6;
 }
 
+.partner-page {
+  display: grid;
+  gap: 24px;
+  width: min(980px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 34px 0 52px;
+}
+
+.partner-back-link,
+.partner-primary-cta,
+.partner-secondary-cta {
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.partner-back-link {
+  color: var(--green-dark);
+}
+
+.partner-hero,
+.partner-section,
+.partner-final-cta {
+  border: 1px solid rgba(36, 199, 189, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 50px rgba(17, 61, 49, 0.1);
+}
+
+.partner-hero {
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  padding: 38px 28px;
+  text-align: center;
+  background:
+    radial-gradient(circle at 88% 18%, rgba(36, 199, 189, 0.18), transparent 22%),
+    linear-gradient(135deg, #123d31 0%, #0a1713 100%);
+  color: #ffffff;
+}
+
+.partner-mark {
+  width: 76px;
+  height: 76px;
+  box-shadow: 8px 8px 0 rgba(255, 106, 47, 0.95);
+}
+
+.partner-hero-eyebrow,
+.partner-section-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.partner-hero-eyebrow {
+  color: #8ee2d8;
+}
+
+.partner-hero h1 {
+  max-width: 760px;
+  margin: 0;
+  white-space: normal;
+}
+
+.partner-hero-lead {
+  max-width: 720px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 1.08rem;
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.partner-cta-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.partner-primary-cta,
+.partner-secondary-cta {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  padding: 0 18px;
+}
+
+.partner-primary-cta {
+  background: var(--teal);
+  color: #ffffff;
+}
+
+.partner-secondary-cta {
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  color: #ffffff;
+}
+
+.partner-section,
+.partner-final-cta {
+  display: grid;
+  gap: 16px;
+  padding: 26px;
+}
+
+.partner-section-title {
+  color: var(--green-dark);
+}
+
+.partner-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.partner-grid article {
+  min-width: 0;
+  border: 1px solid rgba(36, 199, 189, 0.16);
+  border-radius: 8px;
+  padding: 18px;
+  background: #f8fdfb;
+}
+
+.partner-grid h2,
+.partner-section h2,
+.partner-final-cta h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.35rem;
+  line-height: 1.08;
+}
+
+.partner-grid p,
+.partner-section p,
+.partner-benefit-list,
+.partner-step-list p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.accent-partner-section {
+  background:
+    radial-gradient(circle at 92% 12%, rgba(255, 106, 47, 0.1), transparent 24%),
+    #ffffff;
+}
+
+.accent-title {
+  max-width: 620px;
+}
+
+.partner-benefit-list {
+  display: grid;
+  gap: 10px;
+  padding-left: 20px;
+}
+
+.partner-step-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.partner-step-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.partner-step-list span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--green-dark);
+  color: #ffffff;
+  font-weight: 950;
+}
+
+.partner-final-cta {
+  justify-items: center;
+  text-align: center;
+}
+
+.partner-final-cta .partner-primary-cta {
+  width: min(280px, 100%);
+}
+
 table {
   width: 100%;
   min-width: 760px;
@@ -1790,6 +1985,35 @@ td:nth-child(4) {
 
   .report-header h2 {
     font-size: 2.2rem;
+  }
+
+  .partner-page {
+    width: min(100% - 20px, 980px);
+    padding: 18px 0 36px;
+  }
+
+  .partner-hero,
+  .partner-section,
+  .partner-final-cta {
+    padding: 22px 18px;
+  }
+
+  .partner-hero h1 {
+    font-size: 2rem;
+  }
+
+  .partner-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .partner-cta-row {
+    display: grid;
+    width: 100%;
+  }
+
+  .partner-primary-cta,
+  .partner-secondary-cta {
+    width: 100%;
   }
 
   .sheet-actions {
